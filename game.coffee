@@ -14,6 +14,21 @@ $(document).ready ->
       @objects = []
       @lastMillis = @milliseconds()
       @resolution = 1
+      @keyEvents = {}
+      window.document.addEventListener 'keydown', (event) ->
+        char = String.fromCharCode event.keyCode
+        window.console.log char
+        e = window.engine.keyEvents[char]
+        e.state = 'down' if e
+        false
+      window.document.addEventListener 'keyup', (event) ->
+        char = String.fromCharCode event.keyCode
+        window.console.log char
+        e = window.engine.keyEvents[char]
+        e.state = 'up' if e
+        false
+    keyEvent: (key, callback) ->
+      @keyEvents[key] = {callback: callback, key: key, state: 'idle'}
     scale: (factor) ->
       @resolution = factor
       @screen.width = @origw * factor
@@ -24,13 +39,22 @@ $(document).ready ->
       @objects.push object
     update: ->
       return if not @running
+
+      for key in @keyEvents
+        continue if key.state == 'idle'
+        window.console.log key
+        if key.callback
+          event.callback key.state == 'down'
+        key.state = 'idle'
+
       @currentMillis = @milliseconds()
       delta = (@currentMillis - @lastMillis) / 1000
-      for o in @objects
+      sortedObjects = _.sortBy @objects, (o) -> o.position.z
+      for o in sortedObjects
         o.update delta
       @ctx.fillStyle = @clearColor
       @ctx.fillRect 0, 0, @w, @h
-      for o in @objects
+      for o in sortedObjects
         o.draw this
       delta = (@milliseconds() - @lastMillis) / 1000
       @lastMillis = @currentMillis
@@ -117,7 +141,7 @@ $(document).ready ->
       sprite = this
       @w = 0
       @h = 0
-      @scale = 1
+      @scale = 2
       @image.onload = ->
         sprite.loaded = true
         sprite.setSize @width, @height
@@ -170,21 +194,15 @@ $(document).ready ->
   window.setTimeout update, 1
 
   sprite = new Sprite "anim.png", sprites:[3,1]
-  sprite.position = new Vector 100, 100
+  sprite.position = new Vector 100, 100, 10
   sprite.updateCallback = (delta) ->
     @rotate += 5
 
   sprite2 = new Sprite "anim.png", sprites:[3,1]
-  sprite2.position = new Vector 200, 100
+  sprite2.position = new Vector 200, 100, 8
   sprite2.setFPS 0.5
   sprite2.updateCallback = (delta) ->
     @rotate += 1
-
-  window.document.addEventListener 'keypress', (event) ->
-    window.console.log 'down'
-    char = String.fromCharCode event.keyCode
-    sprite.position.x += 1 if char == 'd'
-    true
 
   fps = new Text ""
   fps.frames = 0;
@@ -201,6 +219,11 @@ $(document).ready ->
       @text = rate.toFixed(0)+" FPS"
 
   fps.position = new Vector 0, 0, 100
+
+  window.engine.keyEvent 'D', (down) ->
+    window.console.log 'd'
+    if down
+      sprite.position.x += 10
 
 
   window.engine.add sprite

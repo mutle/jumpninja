@@ -19,7 +19,32 @@
         this.objects = [];
         this.lastMillis = this.milliseconds();
         this.resolution = 1;
+        this.keyEvents = {};
+        window.document.addEventListener('keydown', function(event) {
+          var char, e;
+          char = String.fromCharCode(event.keyCode);
+          window.console.log(char);
+          e = window.engine.keyEvents[char];
+          if (e) e.state = 'down';
+          return false;
+        });
+        window.document.addEventListener('keyup', function(event) {
+          var char, e;
+          char = String.fromCharCode(event.keyCode);
+          window.console.log(char);
+          e = window.engine.keyEvents[char];
+          if (e) e.state = 'up';
+          return false;
+        });
       }
+
+      Engine.prototype.keyEvent = function(key, callback) {
+        return this.keyEvents[key] = {
+          callback: callback,
+          key: key,
+          state: 'idle'
+        };
+      };
 
       Engine.prototype.scale = function(factor) {
         this.resolution = factor;
@@ -34,20 +59,29 @@
       };
 
       Engine.prototype.update = function() {
-        var delta, o, _i, _j, _len, _len2, _ref, _ref2;
+        var delta, key, o, sortedObjects, _i, _j, _k, _len, _len2, _len3, _ref;
         if (!this.running) return;
+        _ref = this.keyEvents;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          key = _ref[_i];
+          if (key.state === 'idle') continue;
+          window.console.log(key);
+          if (key.callback) event.callback(key.state === 'down');
+          key.state = 'idle';
+        }
         this.currentMillis = this.milliseconds();
         delta = (this.currentMillis - this.lastMillis) / 1000;
-        _ref = this.objects;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          o = _ref[_i];
+        sortedObjects = _.sortBy(this.objects, function(o) {
+          return o.position.z;
+        });
+        for (_j = 0, _len2 = sortedObjects.length; _j < _len2; _j++) {
+          o = sortedObjects[_j];
           o.update(delta);
         }
         this.ctx.fillStyle = this.clearColor;
         this.ctx.fillRect(0, 0, this.w, this.h);
-        _ref2 = this.objects;
-        for (_j = 0, _len2 = _ref2.length; _j < _len2; _j++) {
-          o = _ref2[_j];
+        for (_k = 0, _len3 = sortedObjects.length; _k < _len3; _k++) {
+          o = sortedObjects[_k];
           o.draw(this);
         }
         delta = (this.milliseconds() - this.lastMillis) / 1000;
@@ -190,7 +224,7 @@
         sprite = this;
         this.w = 0;
         this.h = 0;
-        this.scale = 1;
+        this.scale = 2;
         this.image.onload = function() {
           sprite.loaded = true;
           return sprite.setSize(this.width, this.height);
@@ -259,25 +293,18 @@
     sprite = new Sprite("anim.png", {
       sprites: [3, 1]
     });
-    sprite.position = new Vector(100, 100);
+    sprite.position = new Vector(100, 100, 10);
     sprite.updateCallback = function(delta) {
       return this.rotate += 5;
     };
     sprite2 = new Sprite("anim.png", {
       sprites: [3, 1]
     });
-    sprite2.position = new Vector(200, 100);
+    sprite2.position = new Vector(200, 100, 8);
     sprite2.setFPS(0.5);
     sprite2.updateCallback = function(delta) {
       return this.rotate += 1;
     };
-    window.document.addEventListener('keypress', function(event) {
-      var char;
-      window.console.log('down');
-      char = String.fromCharCode(event.keyCode);
-      if (char === 'd') sprite.position.x += 1;
-      return true;
-    });
     fps = new Text("");
     fps.frames = 0;
     fps.elapsed = 0;
@@ -294,6 +321,10 @@
       }
     };
     fps.position = new Vector(0, 0, 100);
+    window.engine.keyEvent('D', function(down) {
+      window.console.log('d');
+      if (down) return sprite.position.x += 10;
+    });
     window.engine.add(sprite);
     window.engine.add(sprite2);
     window.engine.add(fps);
