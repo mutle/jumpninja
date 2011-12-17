@@ -5,14 +5,21 @@ $(document).ready ->
     constructor: ->
       @screen = $('#screen').get 0
       @ctx = @screen.getContext "2d"
-      @w = @screen.width
-      @h = @screen.height
+      @origw = @w = @screen.width
+      @origh = @h = @screen.height
       @clearColor = '#000'
       @ctx.fillStyle = @clearColor
       @ctx.fillRect 0, 0, @w, @h
       @running = true
       @objects = []
       @lastMillis = @milliseconds()
+      @resolution = 1
+    scale: (factor) ->
+      @resolution = factor
+      @screen.width = @origw * factor
+      @screen.height = @origh * factor
+      @ctx = @screen.getContext "2d"
+      @ctx.scale factor, factor
     add: (object) ->
       @objects.push object
     update: ->
@@ -71,13 +78,12 @@ $(document).ready ->
     constructor: (@text) ->
       @position = new Vector 100, 100, 10
       @color = '#fff'
-      @font = '20px sans-serif'
+      @font = '30px VT323'
       @align = 'left'
-      @rotate = 45
+      @rotate = 0
       width = engine.measureText(@text, @color, @font, @align).width
       @center = new Vector width / 2, 0
     update: (delta) ->
-      @rotate++
     draw: (engine) ->
       engine.drawText @text, @position, @rotate, @center, @color, @font, @align
 
@@ -89,7 +95,7 @@ $(document).ready ->
       sprite = this
       @w = 0
       @h = 0
-      @scale = 2
+      @scale = 1
       @position = new Vector 100, 100
       @center = new Vector 0, 0
       @image.onload = ->
@@ -162,6 +168,16 @@ $(document).ready ->
   window.engine.add sprite
   window.engine.add sprite2
   window.engine.add text
+
+  window.engine.scale 2
+
+  $("#resolution").click ->
+    if window.engine.resolution > 1
+      $(this).html "Double Size"
+      window.engine.scale 1
+    else
+      $(this).html "Original Size"
+      window.engine.scale 2
 
   $("#pause").click ->
     window.engine.pause()

@@ -8,15 +8,24 @@
       function Engine() {
         this.screen = $('#screen').get(0);
         this.ctx = this.screen.getContext("2d");
-        this.w = this.screen.width;
-        this.h = this.screen.height;
+        this.origw = this.w = this.screen.width;
+        this.origh = this.h = this.screen.height;
         this.clearColor = '#000';
         this.ctx.fillStyle = this.clearColor;
         this.ctx.fillRect(0, 0, this.w, this.h);
         this.running = true;
         this.objects = [];
         this.lastMillis = this.milliseconds();
+        this.resolution = 1;
       }
+
+      Engine.prototype.scale = function(factor) {
+        this.resolution = factor;
+        this.screen.width = this.origw * factor;
+        this.screen.height = this.origh * factor;
+        this.ctx = this.screen.getContext("2d");
+        return this.ctx.scale(factor, factor);
+      };
 
       Engine.prototype.add = function(object) {
         return this.objects.push(object);
@@ -119,16 +128,14 @@
         this.text = text;
         this.position = new Vector(100, 100, 10);
         this.color = '#fff';
-        this.font = '20px sans-serif';
+        this.font = '30px VT323';
         this.align = 'left';
-        this.rotate = 45;
+        this.rotate = 0;
         width = engine.measureText(this.text, this.color, this.font, this.align).width;
         this.center = new Vector(width / 2, 0);
       }
 
-      Text.prototype.update = function(delta) {
-        return this.rotate++;
-      };
+      Text.prototype.update = function(delta) {};
 
       Text.prototype.draw = function(engine) {
         return engine.drawText(this.text, this.position, this.rotate, this.center, this.color, this.font, this.align);
@@ -146,7 +153,7 @@
         sprite = this;
         this.w = 0;
         this.h = 0;
-        this.scale = 2;
+        this.scale = 1;
         this.position = new Vector(100, 100);
         this.center = new Vector(0, 0);
         this.image.onload = function() {
@@ -236,6 +243,16 @@
     window.engine.add(sprite);
     window.engine.add(sprite2);
     window.engine.add(text);
+    window.engine.scale(2);
+    $("#resolution").click(function() {
+      if (window.engine.resolution > 1) {
+        $(this).html("Double Size");
+        return window.engine.scale(1);
+      } else {
+        $(this).html("Original Size");
+        return window.engine.scale(2);
+      }
+    });
     return $("#pause").click(function() {
       window.engine.pause();
       if (window.engine.running) {
