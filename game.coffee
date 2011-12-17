@@ -191,6 +191,7 @@ $(document).ready ->
     update: (delta) ->
       @updateCallback(delta) if @updateCallback
     draw: (engine) ->
+      return if @color is ''
       engine.drawText @text, @position, @rotate, @center, @color, @font, @align
     setFont: (size,font) ->
       @size = size
@@ -283,8 +284,8 @@ $(document).ready ->
       @center = new Vector 64, 102
       @gravity = 0
       @grounded = yes
-      @maxgravity = 200
-      @gravitydecay = 150
+      @maxgravity = 600
+      @gravitydecay = 600
     jump: (jumping) ->
       if jumping 
         return unless @grounded
@@ -305,7 +306,7 @@ $(document).ready ->
             @grounded = yes
             @direction 'front'
             @gravity = 0
-            engine.scene.score = (h-1) * 100
+            engine.scene.setScore (h-2) * 100
         else
           @grounded = no
       if !@grounded
@@ -384,9 +385,16 @@ $(document).ready ->
       @addLayer @uiLayer
 
       @score = 0
+      @scrollspeed = 20
+
+      @setScore = (score) ->
+        oldscore = Math.floor(@score / 1000)
+        @score = score
+        if Math.floor(@score / 1000) > oldscore
+          @scrollspeed += 5
 
       @updateCallback = (delta) ->
-        @position.y += 10 * delta
+        @position.y += @scrollspeed * delta
         h = @character.position.y + @position.y
         tile = @tilesLayer.toTileCoords @position.mult(-1)
         row = tile.y
@@ -396,7 +404,7 @@ $(document).ready ->
         # Scroll up
         if h < 150
           h = 0 if h < 0
-          @position.y += (150 - h / 2) * delta
+          @position.y += (150 - h) * 4 * delta
 
         # Out of the screen
         if h > 490
@@ -408,7 +416,7 @@ $(document).ready ->
         text = new Text "GAME OVER!"
         text.setFont 100
         text.setAlign 'center', 'center'
-        text.position = new Vector 320, 240
+        text.position = new Vector 320, 180
         @uiLayer.add text
 
         text.colors = ['#fff', '#f00', '#0f0', '#00f']
@@ -419,10 +427,22 @@ $(document).ready ->
           index = Math.floor(@colorIndex) % @colors.length
           @color = @colors[index]
 
+        text = new Text "Your Score: "+@score
+        text.setFont 60
+        text.setAlign 'center', 'center'
+        text.position = new Vector 320, 280
+        @uiLayer.add text
+
         text = new Text "Press any key to retry."
         text.setFont 40
         text.setAlign 'center', 'center'
         text.position = new Vector 320, 340
+        text.colors = ['#fff', '']
+        text.colorIndex = 0
+        text.updateCallback = (delta) ->
+          @colorIndex += delta
+          index = Math.floor(@colorIndex) % @colors.length
+          @color = @colors[index]
         @uiLayer.add text
         @registerKeyEvent '', (down) ->
           if !down
