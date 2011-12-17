@@ -98,9 +98,11 @@
         this.currentMillis = this.milliseconds();
         this.delta = (this.currentMillis - this.lastMillis) / 1000;
         this.ctx.fillStyle = this.clearColor;
+        this.ctx.save();
         if (this.scene) this.scene.update(this.delta);
         this.ctx.fillRect(0, 0, this.w, this.h);
         if (this.scene) this.scene.draw(this);
+        this.ctx.restore();
         this.lastMillis = this.currentMillis;
         return this.delta;
       };
@@ -121,13 +123,12 @@
       Engine.prototype.translate = function(offset, rotate, flipH, flipV, caller, callback) {
         var angle;
         angle = rotate * Math.PI / 180;
+        this.ctx.save();
         this.ctx.translate(offset.x, offset.y);
         this.ctx.rotate(angle);
         if (flipH) this.ctx.scale(-1, 1);
         callback.apply(caller);
-        if (flipH) this.ctx.scale(-1, 1);
-        this.ctx.rotate(-angle);
-        return this.ctx.translate(-offset.x, -offset.y);
+        return this.ctx.restore();
       };
 
       Engine.prototype.drawImage = function(image, src, dst, rotate, center, flipH, flipV) {
@@ -236,13 +237,8 @@
         _results = [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           layer = _ref[_i];
-          if (layer.static) {
-            _results.push(layer.update(delta));
-          } else {
-            _results.push(this.engine.translate(this.position, this.rotate, false, false, this, function() {
-              return layer.update(delta);
-            }));
-          }
+          if (!layer.static) layer.position = this.position;
+          _results.push(layer.update(delta));
         }
         return _results;
       };
@@ -351,6 +347,9 @@
           this.center.x = 0;
         } else if (horiz === 'center') {
           this.align = 'center';
+          this.center.x = 0;
+        } else if (horiz === 'right') {
+          this.align = 'right';
           this.center.x = 0;
         }
         if (vert === 'top') {
@@ -493,7 +492,7 @@
               this.grounded = true;
               this.direction('front');
               this.gravity = 0;
-              window.console.log('landed at ' + h);
+              engine.scene.score = (h - 1) * 100;
             }
           } else {
             this.grounded = false;
@@ -557,10 +556,19 @@
         return sprite;
       };
 
-      TilesLayer.prototype.ground = function(position) {
-        var cell, local, row, tile;
+      TilesLayer.prototype.lastRow = function() {
+        return this.offset.y - 1;
+      };
+
+      TilesLayer.prototype.toTileCoords = function(position) {
+        var local, tile;
         local = position.div(this.tileSize);
-        tile = new Vector(Math.floor(local.x), Math.floor(1 - local.y) + 1 + this.initialOffset);
+        return tile = new Vector(Math.floor(local.x), Math.floor(1 - local.y) + 1 + this.initialOffset);
+      };
+
+      TilesLayer.prototype.ground = function(position) {
+        var cell, row, tile;
+        tile = this.toTileCoords(position);
         if (row = this.rows[tile.y]) {
           if (cell = row[tile.x]) if (cell.tile >= 0) return tile.y + 1;
         }
@@ -581,19 +589,35 @@
     window.setTimeout(update, 1);
     mainScene = function() {
       return new Scene(function() {
-        var borderDist, fps, i, n;
+        var borderDist, fps, i, n, scene, score, sprite;
+        scene = this;
         this.backgroundLayer = new Layer;
         this.addLayer(this.backgroundLayer);
         this.tilesLayer = new TilesLayer;
         this.addLayer(this.tilesLayer);
         this.gameLayer = new Layer;
         this.addLayer(this.gameLayer);
+        this.foregroundLayer = new Layer;
+        this.foregroundLayer.static = true;
+        this.addLayer(this.foregroundLayer);
         this.uiLayer = new Layer;
         this.uiLayer.static = true;
         this.addLayer(this.uiLayer);
+        this.score = 0;
         this.updateCallback = function(delta) {
-          if (this.character.position.y > 540) this.gameover();
-          return this.position.y += 10;
+          var h, row, tile;
+          this.position.y += 10 * delta;
+          h = this.character.position.y + this.position.y;
+          tile = this.tilesLayer.toTileCoords(this.position.mult(-1));
+          row = tile.y;
+          if (row > this.tilesLayer.lastRow()) {
+            this.tilesLayer.addTileRow(this.generateRow(this.tilesLayer.lastRow()));
+          }
+          if (h < 150) {
+            if (h < 0) h = 0;
+            this.position.y += (150 - h / 2) * delta;
+          }
+          if (h > 490) return this.gameover();
         };
         this.gameover = function() {
           var text;
@@ -623,8 +647,21 @@
         };
         this.character = new Character;
         this.character.tiles = this.tilesLayer;
-        this.character.position = new Vector(340, 480 - 32);
+        this.character.position = new Vector(340, 480 - 64);
         this.gameLayer.add(this.character);
+        for (i = 0; i <= 18; i++) {
+          sprite = this.tilesLayer.sprite();
+          sprite.frame = 24;
+          sprite.position = new Vector(i * this.tilesLayer.tileSize, 480 - 64);
+          this.foregroundLayer.add(sprite);
+        }
+        score = new Text("Score: 0");
+        score.setAlign('right', 'top');
+        score.updateCallback = function(delta) {
+          return score.text = "Score: " + scene.score;
+        };
+        score.position = new Vector(640 - 5, 0, 100);
+        this.uiLayer.add(score);
         fps = new Text("");
         fps.frames = 0;
         fps.elapsed = 0;
@@ -640,7 +677,7 @@
             return this.text = rate.toFixed(0) + " FPS";
           }
         };
-        fps.position = new Vector(0, 0, 100);
+        fps.position = new Vector(5, 0, 100);
         this.uiLayer.add(fps);
         this.startRow = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         this.platformSize = function(n) {
@@ -652,7 +689,26 @@
         };
         this.generateRow = function(n) {
           var i, pend, ps, pstart, row;
-          if (n === 0) return this.startRow;
+          if (n === 0) {
+            return (function() {
+              var _results;
+              _results = [];
+              for (i = 1; i <= 20; i++) {
+                _results.push(8);
+              }
+              return _results;
+            })();
+          }
+          if (n === 1) {
+            return (function() {
+              var _results;
+              _results = [];
+              for (i = 1; i <= 20; i++) {
+                _results.push(0);
+              }
+              return _results;
+            })();
+          }
           if (n < 3) return [];
           row = (function() {
             var _results;
@@ -670,7 +726,6 @@
             for (i = pstart; pstart <= pend ? i <= pend : i >= pend; pstart <= pend ? i++ : i--) {
               row[i] = 0;
             }
-            window.console.log(row);
           }
           return row;
         };

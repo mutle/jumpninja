@@ -68,9 +68,11 @@ $(document).ready ->
       @delta = (@currentMillis - @lastMillis) / 1000
       @ctx.fillStyle = @clearColor
 
+      @ctx.save()
       @scene.update @delta if @scene
       @ctx.fillRect 0, 0, @w, @h
       @scene.draw this if @scene
+      @ctx.restore()
 
       @lastMillis = @currentMillis
       @delta
@@ -84,15 +86,13 @@ $(document).ready ->
         $('#game').get(0).webkitRequestFullScreen()
     translate: (offset, rotate, flipH, flipV, caller, callback) ->
       angle = rotate * Math.PI / 180
+      @ctx.save()
       @ctx.translate offset.x, offset.y
       @ctx.rotate angle
       if flipH
         @ctx.scale -1, 1
       callback.apply caller
-      if flipH
-        @ctx.scale -1, 1
-      @ctx.rotate -angle
-      @ctx.translate -offset.x, -offset.y
+      @ctx.restore()
 
     drawImage: (image, src, dst, rotate, center, flipH, flipV) ->
       @translate dst.pos, rotate, flipH, flipV, this, ->
@@ -152,11 +152,9 @@ $(document).ready ->
     update: (delta) ->
       @updateCallback delta if @updateCallback
       for layer in @layers
-        if layer.static
-          layer.update delta 
-        else
-          @engine.translate @position, @rotate, false, false, this, ->
-            layer.update delta 
+        if not layer.static
+          layer.position = @position
+        layer.update delta 
     draw: (engine) ->
       layer.draw engine for layer in @layers
     registerKeyEvent: (key, callback) ->
@@ -205,6 +203,9 @@ $(document).ready ->
         @center.x = 0
       else if horiz is 'center'
         @align = 'center'
+        @center.x = 0
+      else if horiz is 'right'
+        @align = 'right'
         @center.x = 0
       if vert is 'top'
         @center.y = -@size / 2
@@ -304,7 +305,7 @@ $(document).ready ->
             @grounded = yes
             @direction 'front'
             @gravity = 0
-            window.console.log 'landed at '+h
+            engine.scene.score = (h-1) * 100
         else
           @grounded = no
       if !@grounded
@@ -344,9 +345,13 @@ $(document).ready ->
     sprite: () ->
       sprite = new Sprite "tiles.png", sprites: [8,4]
       sprite
-    ground: (position) ->
+    lastRow: () ->
+      @offset.y - 1
+    toTileCoords: (position) ->
       local = position.div @tileSize
       tile = new Vector Math.floor(local.x), Math.floor(1 - local.y) + 1 + @initialOffset
+    ground: (position) ->
+      tile = @toTileCoords(position)
       if row = @rows[tile.y]
         if cell = row[tile.x]
           if cell.tile >= 0
@@ -364,20 +369,38 @@ $(document).ready ->
 
   mainScene = ->
     new Scene ->
+      scene = this
       @backgroundLayer = new Layer
       @addLayer @backgroundLayer
       @tilesLayer = new TilesLayer
       @addLayer @tilesLayer
       @gameLayer = new Layer
       @addLayer @gameLayer
+      @foregroundLayer = new Layer
+      @foregroundLayer.static = yes
+      @addLayer @foregroundLayer
       @uiLayer = new Layer
       @uiLayer.static = yes
       @addLayer @uiLayer
 
+      @score = 0
+
       @updateCallback = (delta) ->
-        if @character.position.y > 540
+        @position.y += 10 * delta
+        h = @character.position.y + @position.y
+        tile = @tilesLayer.toTileCoords @position.mult(-1)
+        row = tile.y
+        if row > @tilesLayer.lastRow()
+          @tilesLayer.addTileRow @generateRow @tilesLayer.lastRow()
+
+        # Scroll up
+        if h < 150
+          h = 0 if h < 0
+          @position.y += (150 - h / 2) * delta
+
+        # Out of the screen
+        if h > 490
           @gameover()
-        @position.y += 10
       @gameover = ->
         return if @gameisover
         @gameisover = yes
@@ -408,8 +431,21 @@ $(document).ready ->
 
       @character = new Character
       @character.tiles = @tilesLayer
-      @character.position = new Vector 340, 480 - 32
+      @character.position = new Vector 340, 480 - 64
       @gameLayer.add @character
+
+      for i in [0..18]
+        sprite = @tilesLayer.sprite()
+        sprite.frame = 24
+        sprite.position = new Vector i * @tilesLayer.tileSize, 480 - 64 
+        @foregroundLayer.add sprite
+
+      score = new Text "Score: 0"
+      score.setAlign 'right', 'top'
+      score.updateCallback = (delta) ->
+        score.text = "Score: "+scene.score
+      score.position = new Vector 640 - 5 , 0, 100
+      @uiLayer.add score
 
       fps = new Text ""
       fps.frames = 0;
@@ -425,7 +461,7 @@ $(document).ready ->
           @frames = 0
           @text = rate.toFixed(0)+" FPS"
 
-      fps.position = new Vector 0, 0, 100
+      fps.position = new Vector 5, 0, 100
       @uiLayer.add fps
 
       @startRow = [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0] 
@@ -438,7 +474,8 @@ $(document).ready ->
         Math.floor(Math.random() * 3) is 1
 
       @generateRow = (n) ->
-        return @startRow if n == 0
+        return (8 for i in [1..20]) if n == 0
+        return (0 for i in [1..20]) if n == 1
         return [] if n < 3
         row = (-1 for i in [1..20])
         if @hasPlatform n
@@ -448,7 +485,6 @@ $(document).ready ->
           pend = 19 if pend >= 20
           for i in [pstart..pend]
             row[i] = 0
-          window.console.log row
         return row
 
       n = 0
