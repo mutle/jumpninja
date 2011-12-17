@@ -118,20 +118,20 @@
         }
       };
 
-      Engine.prototype.translate = function(offset, rotate, flipH, flipV, callback) {
+      Engine.prototype.translate = function(offset, rotate, flipH, flipV, caller, callback) {
         var angle;
         angle = rotate * Math.PI / 180;
         this.ctx.translate(offset.x, offset.y);
         this.ctx.rotate(angle);
         if (flipH) this.ctx.scale(-1, 1);
-        callback.apply(this);
+        callback.apply(caller);
         if (flipH) this.ctx.scale(-1, 1);
         this.ctx.rotate(-angle);
         return this.ctx.translate(-offset.x, -offset.y);
       };
 
       Engine.prototype.drawImage = function(image, src, dst, rotate, center, flipH, flipV) {
-        return this.translate(dst.pos, rotate, flipH, flipV, function() {
+        return this.translate(dst.pos, rotate, flipH, flipV, this, function() {
           return this.ctx.drawImage(image, src.pos.x, src.pos.y, src.size.x, src.size.y, -center.x, -center.y, dst.size.x, dst.size.y);
         });
       };
@@ -149,7 +149,7 @@
         this.ctx.font = font;
         this.ctx.textAlign = align;
         this.ctx.textBaseline = 'middle';
-        return this.translate(position, rotate, false, false, function() {
+        return this.translate(position, rotate, false, false, this, function() {
           return this.ctx.fillText(text, -center.x, -center.y);
         });
       };
@@ -236,7 +236,13 @@
         _results = [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           layer = _ref[_i];
-          _results.push(layer.update(delta));
+          if (layer.static) {
+            _results.push(layer.update(delta));
+          } else {
+            _results.push(this.engine.translate(this.position, this.rotate, false, false, this, function() {
+              return layer.update(delta);
+            }));
+          }
         }
         return _results;
       };
@@ -266,6 +272,7 @@
       function Layer() {
         Layer.__super__.constructor.call(this);
         this.objects = [];
+        this.static = false;
       }
 
       Layer.prototype.sort = function() {
@@ -293,7 +300,7 @@
         _results = [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           o = _ref[_i];
-          _results.push(engine.translate(this.position, this.rotate, false, false, function() {
+          _results.push(engine.translate(this.position, this.rotate, false, false, this, function() {
             return o.draw(engine);
           }));
         }
@@ -459,6 +466,7 @@
         this.gravity = 0;
         this.grounded = true;
         this.maxgravity = 200;
+        this.gravitydecay = 150;
       }
 
       Character.prototype.jump = function(jumping) {
@@ -478,18 +486,22 @@
       };
 
       Character.prototype.updateCallback = function(delta) {
+        var h;
         if (this.gravity <= 0) {
-          if (this.tiles.ground(this.position)) {
-            this.grounded = true;
-            this.direction('front');
-            this.gravity = 0;
+          if (h = this.tiles.ground(this.position)) {
+            if (!this.grounded) {
+              this.grounded = true;
+              this.direction('front');
+              this.gravity = 0;
+              window.console.log('landed at ' + h);
+            }
           } else {
             this.grounded = false;
           }
         }
         if (!this.grounded) {
           this.position.y -= this.gravity * delta;
-          this.gravity -= 100 * delta;
+          this.gravity -= this.gravitydecay * delta;
           return this.frame = this.jumpFrames[this.dir][0];
         } else {
           return this.frame = this.frames[this.dir][0];
@@ -507,7 +519,8 @@
         TilesLayer.__super__.constructor.call(this);
         this.tileSize = 32;
         this.rows = {};
-        this.offset = new Vector(0, 13);
+        this.offset = new Vector(0, 0);
+        this.initialOffset = 13;
       }
 
       TilesLayer.prototype.addTileRow = function(tiles) {
@@ -523,7 +536,7 @@
             sprite.tile = tile;
             sprite.frame = tile;
             sprite.scale = 1;
-            sprite.position = new Vector(offset.x + x * this.tileSize, offset.y + (y + 1) * this.tileSize);
+            sprite.position = new Vector(offset.x + x * this.tileSize, 480 - this.tileSize - (offset.y + y * this.tileSize));
             sprite.center = new Vector(0, 0);
             this.add(sprite);
             row.push(sprite);
@@ -533,7 +546,7 @@
           x++;
         }
         this.rows[this.offset.y] = row;
-        return this.offset.y--;
+        return this.offset.y++;
       };
 
       TilesLayer.prototype.sprite = function() {
@@ -547,11 +560,11 @@
       TilesLayer.prototype.ground = function(position) {
         var cell, local, row, tile;
         local = position.div(this.tileSize);
-        tile = new Vector(Math.floor(local.x), Math.floor(local.y) - 1);
+        tile = new Vector(Math.floor(local.x), Math.floor(1 - local.y) + 1 + this.initialOffset);
         if (row = this.rows[tile.y]) {
-          if (cell = row[tile.x]) if (cell.tile >= 0) return true;
+          if (cell = row[tile.x]) if (cell.tile >= 0) return tile.y + 1;
         }
-        return false;
+        return 0;
       };
 
       return TilesLayer;
@@ -568,7 +581,7 @@
     window.setTimeout(update, 1);
     mainScene = function() {
       return new Scene(function() {
-        var borderDist, fps, i;
+        var borderDist, fps, i, n;
         this.backgroundLayer = new Layer;
         this.addLayer(this.backgroundLayer);
         this.tilesLayer = new TilesLayer;
@@ -576,9 +589,11 @@
         this.gameLayer = new Layer;
         this.addLayer(this.gameLayer);
         this.uiLayer = new Layer;
+        this.uiLayer.static = true;
         this.addLayer(this.uiLayer);
         this.updateCallback = function(delta) {
-          if (this.character.position.y > 540) return this.gameover();
+          if (this.character.position.y > 540) this.gameover();
+          return this.position.y += 10;
         };
         this.gameover = function() {
           var text;
@@ -628,12 +643,41 @@
         fps.position = new Vector(0, 0, 100);
         this.uiLayer.add(fps);
         this.startRow = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        this.blankRow = [];
-        this.tilesLayer.addTileRow(this.startRow);
-        this.tilesLayer.addTileRow(this.blankRow);
-        for (i = 1; i <= 13; i++) {
-          this.tilesLayer.addTileRow(this.startRow);
-          this.tilesLayer.addTileRow(this.blankRow);
+        this.platformSize = function(n) {
+          return 2 + Math.floor(Math.random() * 4);
+        };
+        this.hasPlatform = function(n) {
+          if (n % 4 === 1) return true;
+          return Math.floor(Math.random() * 3) === 1;
+        };
+        this.generateRow = function(n) {
+          var i, pend, ps, pstart, row;
+          if (n === 0) return this.startRow;
+          if (n < 3) return [];
+          row = (function() {
+            var _results;
+            _results = [];
+            for (i = 1; i <= 20; i++) {
+              _results.push(-1);
+            }
+            return _results;
+          })();
+          if (this.hasPlatform(n)) {
+            ps = this.platformSize(n);
+            pstart = Math.floor(Math.random() * 18);
+            pend = pstart + ps;
+            if (pend >= 20) pend = 19;
+            for (i = pstart; pstart <= pend ? i <= pend : i >= pend; pstart <= pend ? i++ : i--) {
+              row[i] = 0;
+            }
+            window.console.log(row);
+          }
+          return row;
+        };
+        n = 0;
+        for (i = 1; i <= 15; i++) {
+          this.tilesLayer.addTileRow(this.generateRow(n));
+          n++;
         }
         borderDist = 10;
         this.movespeed = 200;

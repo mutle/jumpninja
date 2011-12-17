@@ -82,20 +82,20 @@ $(document).ready ->
         $('#game').get(0).webkitCancelFullScreen()
       else
         $('#game').get(0).webkitRequestFullScreen()
-    translate: (offset, rotate, flipH, flipV, callback) ->
+    translate: (offset, rotate, flipH, flipV, caller, callback) ->
       angle = rotate * Math.PI / 180
       @ctx.translate offset.x, offset.y
       @ctx.rotate angle
       if flipH
         @ctx.scale -1, 1
-      callback.apply this
+      callback.apply caller
       if flipH
         @ctx.scale -1, 1
       @ctx.rotate -angle
       @ctx.translate -offset.x, -offset.y
 
     drawImage: (image, src, dst, rotate, center, flipH, flipV) ->
-      @translate dst.pos, rotate, flipH, flipV, ->
+      @translate dst.pos, rotate, flipH, flipV, this, ->
         # centerX = if flipH then center.x else -center.x
         @ctx.drawImage image, src.pos.x, src.pos.y, src.size.x, src.size.y, -center.x, -center.y, dst.size.x, dst.size.y
     measureText: (text, color, font, align) ->
@@ -109,7 +109,7 @@ $(document).ready ->
       @ctx.font = font
       @ctx.textAlign = align
       @ctx.textBaseline = 'middle';
-      @translate position, rotate, false, false, ->
+      @translate position, rotate, false, false,this, ->
         @ctx.fillText text, -center.x, -center.y
     milliseconds: ->
       d = new Date
@@ -151,7 +151,12 @@ $(document).ready ->
       @layers.push layer
     update: (delta) ->
       @updateCallback delta if @updateCallback
-      layer.update delta for layer in @layers
+      for layer in @layers
+        if layer.static
+          layer.update delta 
+        else
+          @engine.translate @position, @rotate, false, false, this, ->
+            layer.update delta 
     draw: (engine) ->
       layer.draw engine for layer in @layers
     registerKeyEvent: (key, callback) ->
@@ -161,6 +166,7 @@ $(document).ready ->
     constructor: ->
       super()
       @objects = []
+      @static = no
     sort: ->
       @sortedObjects = _.sortBy @objects, (o) -> o.position.z
     update: (delta) ->
@@ -169,7 +175,7 @@ $(document).ready ->
     draw: (engine) ->
       @sort() unless @sortedObjects
       for o in @sortedObjects
-        engine.translate @position, @rotate, false, false, ->
+        engine.translate @position, @rotate, false, false, this, ->
           o.draw engine 
     add: (object) ->
       @objects.push object
@@ -277,6 +283,7 @@ $(document).ready ->
       @gravity = 0
       @grounded = yes
       @maxgravity = 200
+      @gravitydecay = 150
     jump: (jumping) ->
       if jumping 
         return unless @grounded
@@ -292,15 +299,17 @@ $(document).ready ->
       @frame = @frames[@dir][0]
     updateCallback: (delta) ->
       if @gravity <= 0
-        if @tiles.ground @position
-          @grounded = yes
-          @direction 'front'
-          @gravity = 0
+        if h = @tiles.ground @position
+          if !@grounded
+            @grounded = yes
+            @direction 'front'
+            @gravity = 0
+            window.console.log 'landed at '+h
         else
           @grounded = no
       if !@grounded
         @position.y -= @gravity * delta
-        @gravity -= 100 * delta
+        @gravity -= @gravitydecay * delta
         @frame = @jumpFrames[@dir][0]
       else
         @frame = @frames[@dir][0]
@@ -310,7 +319,8 @@ $(document).ready ->
       super()
       @tileSize = 32
       @rows = {}
-      @offset = new Vector 0, 13
+      @offset = new Vector 0, 0
+      @initialOffset = 13
     addTileRow: (tiles) ->
       y=0
       x = 0
@@ -322,7 +332,7 @@ $(document).ready ->
           sprite.tile = tile
           sprite.frame = tile
           sprite.scale = 1
-          sprite.position = new Vector offset.x + x * @tileSize, offset.y + (y+1) * @tileSize
+          sprite.position = new Vector offset.x + x * @tileSize, 480 - @tileSize - (offset.y + y * @tileSize)
           sprite.center = new Vector 0, 0
           @add sprite
           row.push sprite
@@ -330,18 +340,18 @@ $(document).ready ->
           row.push null
         x++
       @rows[@offset.y] = row
-      @offset.y--
+      @offset.y++
     sprite: () ->
       sprite = new Sprite "tiles.png", sprites: [8,4]
       sprite
     ground: (position) ->
       local = position.div @tileSize
-      tile = new Vector Math.floor(local.x), Math.floor(local.y) - 1
+      tile = new Vector Math.floor(local.x), Math.floor(1 - local.y) + 1 + @initialOffset
       if row = @rows[tile.y]
         if cell = row[tile.x]
           if cell.tile >= 0
-            return yes
-      no
+            return tile.y + 1
+      0
 
 
   window.engine = new Engine
@@ -361,11 +371,13 @@ $(document).ready ->
       @gameLayer = new Layer
       @addLayer @gameLayer
       @uiLayer = new Layer
+      @uiLayer.static = yes
       @addLayer @uiLayer
 
       @updateCallback = (delta) ->
         if @character.position.y > 540
           @gameover()
+        @position.y += 10
       @gameover = ->
         return if @gameisover
         @gameisover = yes
@@ -417,14 +429,34 @@ $(document).ready ->
       @uiLayer.add fps
 
       @startRow = [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0] 
-      @blankRow = []
+
+      @platformSize = (n) ->
+        2 + Math.floor(Math.random() * 4)
+
+      @hasPlatform = (n) ->
+        return yes if n % 4 == 1
+        Math.floor(Math.random() * 3) is 1
+
+      @generateRow = (n) ->
+        return @startRow if n == 0
+        return [] if n < 3
+        row = (-1 for i in [1..20])
+        if @hasPlatform n
+          ps = @platformSize(n)
+          pstart = Math.floor(Math.random() * 18)
+          pend = pstart + ps
+          pend = 19 if pend >= 20
+          for i in [pstart..pend]
+            row[i] = 0
+          window.console.log row
+        return row
+
+      n = 0
 
       # 20 x 15
-      @tilesLayer.addTileRow @startRow
-      @tilesLayer.addTileRow @blankRow
-      for i in [1..13]
-        @tilesLayer.addTileRow @startRow 
-        @tilesLayer.addTileRow @blankRow 
+      for i in [1..15]
+        @tilesLayer.addTileRow @generateRow(n)
+        n++
 
       borderDist = 10
       @movespeed = 200
