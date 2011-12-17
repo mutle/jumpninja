@@ -32,7 +32,9 @@ $(document).ready ->
       @ctx.fillRect 0, 0, @w, @h
       for o in @objects
         o.draw this
+      delta = (@milliseconds() - @lastMillis) / 1000
       @lastMillis = @currentMillis
+      delta
     pause: ->
       @running = not @running
       @lastMillis = @milliseconds()
@@ -74,30 +76,48 @@ $(document).ready ->
       if !@z
         @z = 0
 
-  class Text
-    constructor: (@text) ->
-      @position = new Vector 100, 100, 10
-      @color = '#fff'
-      @font = '30px VT323'
-      @align = 'left'
+  class Renderable
+    constructor: ->
+      @position = new Vector 0, 0, 0
       @rotate = 0
+      @center = new Vector 0, 0
+
+  class Text extends Renderable
+    constructor: (@text) ->
+      super
+      @color = '#fff'
+      @fontName = 'VT323'
+      @size = 30
+      @setFont @size, @fontName
+      @align = 'left'
       width = engine.measureText(@text, @color, @font, @align).width
       @center = new Vector width / 2, 0
     update: (delta) ->
+      @updateCallback(delta) if @updateCallback
     draw: (engine) ->
       engine.drawText @text, @position, @rotate, @center, @color, @font, @align
+    setFont: (size,font) ->
+      @size = size
+      if font
+        @fontName = font
+      @font = @size+'px '+@fontName
+    setAlign: (horiz,vert) ->
+      if horiz == 'left'
+        @align = 'left'
+        @center.x = 0
+      if vert == 'top'
+        @center.y = -@size / 2
 
 
-  class Sprite
+  class Sprite extends Renderable
     constructor: (src, attrs) ->
+      super
       @image = new Image
       @loaded = false
       sprite = this
       @w = 0
       @h = 0
       @scale = 1
-      @position = new Vector 100, 100
-      @center = new Vector 0, 0
       @image.onload = ->
         sprite.loaded = true
         sprite.setSize @width, @height
@@ -143,16 +163,19 @@ $(document).ready ->
         @frame = 0 if @frame >= @totalFrames
 
   window.engine = new Engine
+  updateRate = 1000/60
   update = ->
-    window.engine.update();
-  window.setInterval update, 0.0333
+    delta = window.engine.update()
+    window.setTimeout update, updateRate - (delta * 1000)
+  window.setTimeout update, 1
 
   sprite = new Sprite "anim.png", sprites:[3,1]
+  sprite.position = new Vector 100, 100
   sprite.updateCallback = (delta) ->
     @rotate += 5
 
   sprite2 = new Sprite "anim.png", sprites:[3,1]
-  sprite2.position.y += 200
+  sprite2.position = new Vector 200, 100
   sprite2.setFPS 0.5
   sprite2.updateCallback = (delta) ->
     @rotate += 1
@@ -163,13 +186,26 @@ $(document).ready ->
     sprite.position.x += 1 if char == 'd'
     true
 
-  text = new Text "foo"
+  fps = new Text ""
+  fps.frames = 0;
+  fps.elapsed = 0;
+  fps.setAlign 'left', 'top'
+  fps.updateCallback = (delta) ->
+    fps.elapsed += delta
+    @frames++
+
+    if fps.elapsed > 1
+      rate = @frames / fps.elapsed
+      fps.elapsed -= 1
+      @frames = 0
+      @text = rate.toFixed(0)+" FPS"
+
+  fps.position = new Vector 0, 0, 100
+
 
   window.engine.add sprite
   window.engine.add sprite2
-  window.engine.add text
-
-  window.engine.scale 2
+  window.engine.add fps
 
   $("#resolution").click ->
     if window.engine.resolution > 1

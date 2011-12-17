@@ -1,8 +1,10 @@
+(function() {
+  var __hasProp = Object.prototype.hasOwnProperty, __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype; return child; };
 
   window.engine = null;
 
   $(document).ready(function() {
-    var Engine, Rect, Sprite, Text, Vector, sprite, sprite2, text, update;
+    var Engine, Rect, Renderable, Sprite, Text, Vector, fps, sprite, sprite2, update, updateRate;
     Engine = (function() {
 
       function Engine() {
@@ -48,7 +50,9 @@
           o = _ref2[_j];
           o.draw(this);
         }
-        return this.lastMillis = this.currentMillis;
+        delta = (this.milliseconds() - this.lastMillis) / 1000;
+        this.lastMillis = this.currentMillis;
+        return delta;
       };
 
       Engine.prototype.pause = function() {
@@ -121,24 +125,54 @@
       return Vector;
 
     })();
+    Renderable = (function() {
+
+      function Renderable() {
+        this.position = new Vector(0, 0, 0);
+        this.rotate = 0;
+        this.center = new Vector(0, 0);
+      }
+
+      return Renderable;
+
+    })();
     Text = (function() {
+
+      __extends(Text, Renderable);
 
       function Text(text) {
         var width;
         this.text = text;
-        this.position = new Vector(100, 100, 10);
+        Text.__super__.constructor.apply(this, arguments);
         this.color = '#fff';
-        this.font = '30px VT323';
+        this.fontName = 'VT323';
+        this.size = 30;
+        this.setFont(this.size, this.fontName);
         this.align = 'left';
-        this.rotate = 0;
         width = engine.measureText(this.text, this.color, this.font, this.align).width;
         this.center = new Vector(width / 2, 0);
       }
 
-      Text.prototype.update = function(delta) {};
+      Text.prototype.update = function(delta) {
+        if (this.updateCallback) return this.updateCallback(delta);
+      };
 
       Text.prototype.draw = function(engine) {
         return engine.drawText(this.text, this.position, this.rotate, this.center, this.color, this.font, this.align);
+      };
+
+      Text.prototype.setFont = function(size, font) {
+        this.size = size;
+        if (font) this.fontName = font;
+        return this.font = this.size + 'px ' + this.fontName;
+      };
+
+      Text.prototype.setAlign = function(horiz, vert) {
+        if (horiz === 'left') {
+          this.align = 'left';
+          this.center.x = 0;
+        }
+        if (vert === 'top') return this.center.y = -this.size / 2;
       };
 
       return Text;
@@ -146,16 +180,17 @@
     })();
     Sprite = (function() {
 
+      __extends(Sprite, Renderable);
+
       function Sprite(src, attrs) {
         var sprite;
+        Sprite.__super__.constructor.apply(this, arguments);
         this.image = new Image;
         this.loaded = false;
         sprite = this;
         this.w = 0;
         this.h = 0;
         this.scale = 1;
-        this.position = new Vector(100, 100);
-        this.center = new Vector(0, 0);
         this.image.onload = function() {
           sprite.loaded = true;
           return sprite.setSize(this.width, this.height);
@@ -214,20 +249,24 @@
 
     })();
     window.engine = new Engine;
+    updateRate = 1000 / 60;
     update = function() {
-      return window.engine.update();
+      var delta;
+      delta = window.engine.update();
+      return window.setTimeout(update, updateRate - (delta * 1000));
     };
-    window.setInterval(update, 0.0333);
+    window.setTimeout(update, 1);
     sprite = new Sprite("anim.png", {
       sprites: [3, 1]
     });
+    sprite.position = new Vector(100, 100);
     sprite.updateCallback = function(delta) {
       return this.rotate += 5;
     };
     sprite2 = new Sprite("anim.png", {
       sprites: [3, 1]
     });
-    sprite2.position.y += 200;
+    sprite2.position = new Vector(200, 100);
     sprite2.setFPS(0.5);
     sprite2.updateCallback = function(delta) {
       return this.rotate += 1;
@@ -239,11 +278,25 @@
       if (char === 'd') sprite.position.x += 1;
       return true;
     });
-    text = new Text("foo");
+    fps = new Text("");
+    fps.frames = 0;
+    fps.elapsed = 0;
+    fps.setAlign('left', 'top');
+    fps.updateCallback = function(delta) {
+      var rate;
+      fps.elapsed += delta;
+      this.frames++;
+      if (fps.elapsed > 1) {
+        rate = this.frames / fps.elapsed;
+        fps.elapsed -= 1;
+        this.frames = 0;
+        return this.text = rate.toFixed(0) + " FPS";
+      }
+    };
+    fps.position = new Vector(0, 0, 100);
     window.engine.add(sprite);
     window.engine.add(sprite2);
-    window.engine.add(text);
-    window.engine.scale(2);
+    window.engine.add(fps);
     $("#resolution").click(function() {
       if (window.engine.resolution > 1) {
         $(this).html("Double Size");
@@ -262,3 +315,5 @@
       }
     });
   });
+
+}).call(this);
