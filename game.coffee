@@ -15,20 +15,25 @@ $(document).ready ->
       @lastMillis = @milliseconds()
       @resolution = 1
       @keyEvents = {}
+      @delta = 0
       window.document.addEventListener 'keydown', (event) ->
         char = String.fromCharCode event.keyCode
-        window.console.log char
-        e = window.engine.keyEvents[char]
-        e.state = 'down' if e
+        window.engine.updateEvent char, 'down'
         false
       window.document.addEventListener 'keyup', (event) ->
         char = String.fromCharCode event.keyCode
-        window.console.log char
-        e = window.engine.keyEvents[char]
-        e.state = 'up' if e
+        window.engine.updateEvent char, 'up'
         false
-    keyEvent: (key, callback) ->
+    registerKeyEvent: (key, callback) ->
       @keyEvents[key] = {callback: callback, key: key, state: 'idle'}
+    updateEvent: (key, state) ->
+      event = @keyEvents[key]
+      event.state = state if event
+    handleEvent: (event) ->
+      if event.callback
+        event.callback event.state == 'down'
+      if event.state == 'up'
+        event.state = 'idle'
     scale: (factor) ->
       @resolution = factor
       @screen.width = @origw * factor
@@ -38,40 +43,42 @@ $(document).ready ->
     add: (object) ->
       @objects.push object
     update: ->
-      return if not @running
+      return unless @running
 
-      for key in @keyEvents
-        continue if key.state == 'idle'
-        window.console.log key
-        if key.callback
-          event.callback key.state == 'down'
-        key.state = 'idle'
+      for key, event of @keyEvents
+        continue if event.state is 'idle'
+        @handleEvent event
 
       @currentMillis = @milliseconds()
-      delta = (@currentMillis - @lastMillis) / 1000
+      @delta = (@currentMillis - @lastMillis) / 1000
       sortedObjects = _.sortBy @objects, (o) -> o.position.z
       for o in sortedObjects
-        o.update delta
+        o.update @delta
       @ctx.fillStyle = @clearColor
       @ctx.fillRect 0, 0, @w, @h
       for o in sortedObjects
         o.draw this
-      delta = (@milliseconds() - @lastMillis) / 1000
+        # @delta = (@milliseconds() - @lastMillis) / 1000
       @lastMillis = @currentMillis
-      delta
+      @delta
     pause: ->
       @running = not @running
       @lastMillis = @milliseconds()
-    translate: (offset, rotate, callback) ->
+    translate: (offset, rotate, flipH, flipV, callback) ->
       angle = rotate * Math.PI / 180
       @ctx.translate offset.x, offset.y
       @ctx.rotate angle
+      if flipH
+        window.console.log "flipping"
+        @ctx.scale -1, 1
       callback.apply this
+      if flipH
+        @ctx.scale -1, 1
       @ctx.rotate -angle
       @ctx.translate -offset.x, -offset.y
 
-    drawImage: (image, src, dst, rotate, center) ->
-      @translate dst.pos, rotate, ->
+    drawImage: (image, src, dst, rotate, center, flipH, flipV) ->
+      @translate dst.pos, rotate, flipH, flipV, ->
         @ctx.drawImage image, src.pos.x, src.pos.y, src.size.x, src.size.y, -center.x, -center.y, dst.size.x, dst.size.y
     measureText: (text, color, font, align) ->
       @ctx.fillStyle = color
@@ -84,7 +91,7 @@ $(document).ready ->
       @ctx.font = font
       @ctx.textAlign = align
       @ctx.textBaseline = 'middle';
-      @translate position, rotate, ->
+      @translate position, rotate, false, false, ->
         @ctx.fillText text, -center.x, -center.y
     milliseconds: ->
       d = new Date
@@ -150,12 +157,14 @@ $(document).ready ->
         @sprites = new Vector attrs.sprites[0], attrs.sprites[1]
       else
         @sprites = [1,1]
-      @frame = 1
+      @frame = 0
       @setFPS 1
       @frameTime = 0
       @totalFrames = @sprites.x * @sprites.y
       @rotate = 0
       @animating = false
+      @flipH = false
+      @flipV = false
 
     setFPS: (fps) ->
       @frameRate = 1/fps;
@@ -178,7 +187,7 @@ $(document).ready ->
 
     draw: (engine) ->
       return if not @loaded
-      engine.drawImage @image, @src, @dst, @rotate, @center
+      engine.drawImage @image, @src, @dst, @rotate, @center, @flipH, @flipV
 
     nextFrame: (delta) ->
       return if not @animating
@@ -188,6 +197,17 @@ $(document).ready ->
         @frame++
         @frame = 0 if @frame >= @totalFrames
 
+  class Character extends Sprite
+    constructor: () ->
+      super "character.png", sprites: [8,1]
+      @frames = {'front': [0], 'left': [1], 'right': [1]}
+      @direction 'front'
+    direction: (dir) ->
+      @dir = dir
+      @flipH = @dir is 'left'
+      @frame = @frames[@dir][0]
+
+
   window.engine = new Engine
   updateRate = 1000/60
   update = ->
@@ -195,7 +215,7 @@ $(document).ready ->
     window.setTimeout update, updateRate - (delta * 1000)
   window.setTimeout update, 1
 
-  character = new Sprite "character.png", sprites:[8,1]
+  character = new Character
   character.position = new Vector 100, 100, 10
   character.updateCallback = (delta) ->
 
@@ -215,10 +235,18 @@ $(document).ready ->
 
   fps.position = new Vector 0, 0, 100
 
-  window.engine.keyEvent 'D', (down) ->
-    window.console.log 'd'
+  window.engine.registerKeyEvent 'D', (down) ->
     if down
-      sprite.position.x += 10
+      character.position.x += 100 * window.engine.delta
+      character.direction 'right'
+    else
+      character.direction 'front'
+  window.engine.registerKeyEvent 'A', (down) ->
+    if down
+      character.direction 'left'
+      character.position.x -= 100 * window.engine.delta
+    else
+      character.direction 'front'
 
 
   window.engine.add character

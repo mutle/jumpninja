@@ -4,7 +4,7 @@
   window.engine = null;
 
   $(document).ready(function() {
-    var Engine, Rect, Renderable, Sprite, Text, Vector, character, fps, update, updateRate;
+    var Character, Engine, Rect, Renderable, Sprite, Text, Vector, character, fps, update, updateRate;
     Engine = (function() {
 
       function Engine() {
@@ -20,30 +20,38 @@
         this.lastMillis = this.milliseconds();
         this.resolution = 1;
         this.keyEvents = {};
+        this.delta = 0;
         window.document.addEventListener('keydown', function(event) {
-          var char, e;
+          var char;
           char = String.fromCharCode(event.keyCode);
-          window.console.log(char);
-          e = window.engine.keyEvents[char];
-          if (e) e.state = 'down';
+          window.engine.updateEvent(char, 'down');
           return false;
         });
         window.document.addEventListener('keyup', function(event) {
-          var char, e;
+          var char;
           char = String.fromCharCode(event.keyCode);
-          window.console.log(char);
-          e = window.engine.keyEvents[char];
-          if (e) e.state = 'up';
+          window.engine.updateEvent(char, 'up');
           return false;
         });
       }
 
-      Engine.prototype.keyEvent = function(key, callback) {
+      Engine.prototype.registerKeyEvent = function(key, callback) {
         return this.keyEvents[key] = {
           callback: callback,
           key: key,
           state: 'idle'
         };
+      };
+
+      Engine.prototype.updateEvent = function(key, state) {
+        var event;
+        event = this.keyEvents[key];
+        if (event) return event.state = state;
+      };
+
+      Engine.prototype.handleEvent = function(event) {
+        if (event.callback) event.callback(event.state === 'down');
+        if (event.state === 'up') return event.state = 'idle';
       };
 
       Engine.prototype.scale = function(factor) {
@@ -59,34 +67,31 @@
       };
 
       Engine.prototype.update = function() {
-        var delta, key, o, sortedObjects, _i, _j, _k, _len, _len2, _len3, _ref;
+        var event, key, o, sortedObjects, _i, _j, _len, _len2, _ref;
         if (!this.running) return;
         _ref = this.keyEvents;
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          key = _ref[_i];
-          if (key.state === 'idle') continue;
-          window.console.log(key);
-          if (key.callback) event.callback(key.state === 'down');
-          key.state = 'idle';
+        for (key in _ref) {
+          event = _ref[key];
+          if (event.state === 'idle') continue;
+          this.handleEvent(event);
         }
         this.currentMillis = this.milliseconds();
-        delta = (this.currentMillis - this.lastMillis) / 1000;
+        this.delta = (this.currentMillis - this.lastMillis) / 1000;
         sortedObjects = _.sortBy(this.objects, function(o) {
           return o.position.z;
         });
-        for (_j = 0, _len2 = sortedObjects.length; _j < _len2; _j++) {
-          o = sortedObjects[_j];
-          o.update(delta);
+        for (_i = 0, _len = sortedObjects.length; _i < _len; _i++) {
+          o = sortedObjects[_i];
+          o.update(this.delta);
         }
         this.ctx.fillStyle = this.clearColor;
         this.ctx.fillRect(0, 0, this.w, this.h);
-        for (_k = 0, _len3 = sortedObjects.length; _k < _len3; _k++) {
-          o = sortedObjects[_k];
+        for (_j = 0, _len2 = sortedObjects.length; _j < _len2; _j++) {
+          o = sortedObjects[_j];
           o.draw(this);
         }
-        delta = (this.milliseconds() - this.lastMillis) / 1000;
         this.lastMillis = this.currentMillis;
-        return delta;
+        return this.delta;
       };
 
       Engine.prototype.pause = function() {
@@ -94,18 +99,23 @@
         return this.lastMillis = this.milliseconds();
       };
 
-      Engine.prototype.translate = function(offset, rotate, callback) {
+      Engine.prototype.translate = function(offset, rotate, flipH, flipV, callback) {
         var angle;
         angle = rotate * Math.PI / 180;
         this.ctx.translate(offset.x, offset.y);
         this.ctx.rotate(angle);
+        if (flipH) {
+          window.console.log("flipping");
+          this.ctx.scale(-1, 1);
+        }
         callback.apply(this);
+        if (flipH) this.ctx.scale(-1, 1);
         this.ctx.rotate(-angle);
         return this.ctx.translate(-offset.x, -offset.y);
       };
 
-      Engine.prototype.drawImage = function(image, src, dst, rotate, center) {
-        return this.translate(dst.pos, rotate, function() {
+      Engine.prototype.drawImage = function(image, src, dst, rotate, center, flipH, flipV) {
+        return this.translate(dst.pos, rotate, flipH, flipV, function() {
           return this.ctx.drawImage(image, src.pos.x, src.pos.y, src.size.x, src.size.y, -center.x, -center.y, dst.size.x, dst.size.y);
         });
       };
@@ -123,7 +133,7 @@
         this.ctx.font = font;
         this.ctx.textAlign = align;
         this.ctx.textBaseline = 'middle';
-        return this.translate(position, rotate, function() {
+        return this.translate(position, rotate, false, false, function() {
           return this.ctx.fillText(text, -center.x, -center.y);
         });
       };
@@ -235,12 +245,14 @@
         } else {
           this.sprites = [1, 1];
         }
-        this.frame = 1;
+        this.frame = 0;
         this.setFPS(1);
         this.frameTime = 0;
         this.totalFrames = this.sprites.x * this.sprites.y;
         this.rotate = 0;
         this.animating = false;
+        this.flipH = false;
+        this.flipV = false;
       }
 
       Sprite.prototype.setFPS = function(fps) {
@@ -268,7 +280,7 @@
 
       Sprite.prototype.draw = function(engine) {
         if (!this.loaded) return;
-        return engine.drawImage(this.image, this.src, this.dst, this.rotate, this.center);
+        return engine.drawImage(this.image, this.src, this.dst, this.rotate, this.center, this.flipH, this.flipV);
       };
 
       Sprite.prototype.nextFrame = function(delta) {
@@ -284,6 +296,31 @@
       return Sprite;
 
     })();
+    Character = (function() {
+
+      __extends(Character, Sprite);
+
+      function Character() {
+        Character.__super__.constructor.call(this, "character.png", {
+          sprites: [8, 1]
+        });
+        this.frames = {
+          'front': [0],
+          'left': [1],
+          'right': [1]
+        };
+        this.direction('front');
+      }
+
+      Character.prototype.direction = function(dir) {
+        this.dir = dir;
+        this.flipH = this.dir === 'left';
+        return this.frame = this.frames[this.dir][0];
+      };
+
+      return Character;
+
+    })();
     window.engine = new Engine;
     updateRate = 1000 / 60;
     update = function() {
@@ -292,9 +329,7 @@
       return window.setTimeout(update, updateRate - (delta * 1000));
     };
     window.setTimeout(update, 1);
-    character = new Sprite("character.png", {
-      sprites: [8, 1]
-    });
+    character = new Character;
     character.position = new Vector(100, 100, 10);
     character.updateCallback = function(delta) {};
     fps = new Text("");
@@ -313,9 +348,21 @@
       }
     };
     fps.position = new Vector(0, 0, 100);
-    window.engine.keyEvent('D', function(down) {
-      window.console.log('d');
-      if (down) return sprite.position.x += 10;
+    window.engine.registerKeyEvent('D', function(down) {
+      if (down) {
+        character.position.x += 100 * window.engine.delta;
+        return character.direction('right');
+      } else {
+        return character.direction('front');
+      }
+    });
+    window.engine.registerKeyEvent('A', function(down) {
+      if (down) {
+        character.direction('left');
+        return character.position.x -= 100 * window.engine.delta;
+      } else {
+        return character.direction('front');
+      }
     });
     window.engine.add(character);
     window.engine.add(fps);
