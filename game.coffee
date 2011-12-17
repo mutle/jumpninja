@@ -54,6 +54,7 @@ $(document).ready ->
 
       @currentMillis = @milliseconds()
       @delta = (@currentMillis - @lastMillis) / 1000
+      @updateCallback @delta if @updateCallback
       layer.update @delta for layer in @layers
       @ctx.fillStyle = @clearColor
       @ctx.fillRect 0, 0, @w, @h
@@ -160,11 +161,16 @@ $(document).ready ->
         @fontName = font
       @font = @size+'px '+@fontName
     setAlign: (horiz,vert) ->
-      if horiz == 'left'
+      if horiz is 'left'
         @align = 'left'
         @center.x = 0
-      if vert == 'top'
+      else if horiz is 'center'
+        @align = 'center'
+        @center.x = 0
+      if vert is 'top'
         @center.y = -@size / 2
+      else if vert is 'center'
+        @center.y = 0
 
 
   class Sprite extends Renderable
@@ -319,6 +325,34 @@ $(document).ready ->
   window.engine.addLayer gameLayer
   uiLayer = new Layer
   window.engine.addLayer uiLayer
+
+  engine.gameisover = no
+  engine.updateCallback = (delta) ->
+    if character.position.y > 540
+      engine.gameover()
+  engine.gameover = () ->
+    return if engine.gameisover
+    engine.gameisover = yes
+    text = new Text "GAME OVER!"
+    text.setFont 100
+    text.setAlign 'center', 'center'
+    text.position = new Vector 320, 240
+    uiLayer.add text
+
+    text.colors = ['#fff', '#f00', '#0f0', '#00f']
+    text.colorIndex = 0
+
+    text.updateCallback = (delta) ->
+      @colorIndex += delta
+      index = Math.floor(@colorIndex) % @colors.length
+      @color = @colors[index]
+
+    text = new Text "Press any key to retry."
+    text.setFont 40
+    text.setAlign 'center', 'center'
+    text.position = new Vector 320, 340
+    uiLayer.add text
+      
 
   character = new Character
   character.tiles = tilesLayer

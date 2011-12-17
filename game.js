@@ -83,6 +83,7 @@
         }
         this.currentMillis = this.milliseconds();
         this.delta = (this.currentMillis - this.lastMillis) / 1000;
+        if (this.updateCallback) this.updateCallback(this.delta);
         _ref2 = this.layers;
         for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
           layer = _ref2[_i];
@@ -284,8 +285,15 @@
         if (horiz === 'left') {
           this.align = 'left';
           this.center.x = 0;
+        } else if (horiz === 'center') {
+          this.align = 'center';
+          this.center.x = 0;
         }
-        if (vert === 'top') return this.center.y = -this.size / 2;
+        if (vert === 'top') {
+          return this.center.y = -this.size / 2;
+        } else if (vert === 'center') {
+          return this.center.y = 0;
+        }
       };
 
       return Text;
@@ -507,6 +515,33 @@
     window.engine.addLayer(gameLayer);
     uiLayer = new Layer;
     window.engine.addLayer(uiLayer);
+    engine.gameisover = false;
+    engine.updateCallback = function(delta) {
+      if (character.position.y > 540) return engine.gameover();
+    };
+    engine.gameover = function() {
+      var text;
+      if (engine.gameisover) return;
+      engine.gameisover = true;
+      text = new Text("GAME OVER!");
+      text.setFont(100);
+      text.setAlign('center', 'center');
+      text.position = new Vector(320, 240);
+      uiLayer.add(text);
+      text.colors = ['#fff', '#f00', '#0f0', '#00f'];
+      text.colorIndex = 0;
+      text.updateCallback = function(delta) {
+        var index;
+        this.colorIndex += delta;
+        index = Math.floor(this.colorIndex) % this.colors.length;
+        return this.color = this.colors[index];
+      };
+      text = new Text("Press any key to retry.");
+      text.setFont(40);
+      text.setAlign('center', 'center');
+      text.position = new Vector(320, 340);
+      return uiLayer.add(text);
+    };
     character = new Character;
     character.tiles = tilesLayer;
     gameLayer.add(character);
