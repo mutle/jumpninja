@@ -4,7 +4,7 @@
   window.engine = null;
 
   $(document).ready(function() {
-    var Character, Engine, Layer, Rect, Renderable, Sprite, Text, TilesLayer, Vector, backgroundLayer, character, fps, gameLayer, tilesLayer, uiLayer, update, updateRate;
+    var Character, Engine, Layer, Rect, Renderable, Sprite, Text, TilesLayer, Vector, backgroundLayer, borderDist, character, fps, gameLayer, tilesLayer, uiLayer, update, updateRate;
     Engine = (function() {
 
       function Engine() {
@@ -391,10 +391,19 @@
         this.direction('front');
         this.jumping = false;
         this.center = new Vector(64, 102);
+        this.gravity = 0;
+        this.grounded = true;
+        this.maxgravity = 200;
       }
 
       Character.prototype.jump = function(jumping) {
-        return this.jumping = jumping;
+        if (jumping) {
+          if (!this.grounded) return;
+          if (!this.jumping) this.gravity += this.maxgravity;
+        }
+        if (this.gravity > this.maxgravity) this.gravity = this.maxgravity;
+        this.jumping = jumping;
+        if (this.jumping) return this.grounded = false;
       };
 
       Character.prototype.direction = function(dir) {
@@ -404,8 +413,17 @@
       };
 
       Character.prototype.updateCallback = function(delta) {
-        if (this.jumping) {
-          this.position.y -= 100 * delta;
+        if (this.gravity <= 0) {
+          if (this.tiles.ground(this.position)) {
+            this.grounded = true;
+            this.gravity = 0;
+          } else {
+            this.grounded = false;
+          }
+        }
+        if (!this.grounded) {
+          this.position.y -= this.gravity * delta;
+          this.gravity -= 100 * delta;
           return this.frame = this.jumpFrames[this.dir][0];
         } else {
           return this.frame = this.frames[this.dir][0];
@@ -436,6 +454,7 @@
           tile = tiles[_i];
           if (tile >= 0) {
             sprite = this.sprite();
+            sprite.tile = tile;
             sprite.frame = tile;
             sprite.scale = 1;
             sprite.position = new Vector(offset.x + (x + 1) * this.tileSize, offset.y + (y + 1) * this.tileSize);
@@ -459,6 +478,16 @@
         return sprite;
       };
 
+      TilesLayer.prototype.ground = function(position) {
+        var cell, local, row, tile;
+        local = position.div(this.tileSize);
+        tile = new Vector(Math.floor(local.x) - 1, Math.floor(local.y) - 1);
+        if (row = this.rows[tile.y]) {
+          if (cell = row[tile.x]) if (cell.tile >= 0) return true;
+        }
+        return false;
+      };
+
       return TilesLayer;
 
     })();
@@ -479,6 +508,7 @@
     uiLayer = new Layer;
     window.engine.addLayer(uiLayer);
     character = new Character;
+    character.tiles = tilesLayer;
     gameLayer.add(character);
     fps = new Text("");
     fps.frames = 0;
@@ -500,10 +530,14 @@
     tilesLayer.addTileRow([0, 8, 8, 8, 8, 8, 8, 8, 8, 0, -1, -1, -1, -1, -1, -1, 0, 0, 8]);
     tilesLayer.addTileRow([-1, 0, -1, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, 8]);
     tilesLayer.addTileRow([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0]);
-    character.position = new Vector(320, 480);
+    character.position = new Vector(320, 480 - 64);
+    borderDist = 10;
     window.engine.registerKeyEvent('D', function(down) {
       if (down) {
         character.position.x += 100 * window.engine.delta;
+        if (character.position.x > 640 - borderDist) {
+          character.position.x = 640 - borderDist;
+        }
         return character.direction('right');
       } else {
         return character.direction('front');
@@ -512,7 +546,10 @@
     window.engine.registerKeyEvent('A', function(down) {
       if (down) {
         character.direction('left');
-        return character.position.x -= 100 * window.engine.delta;
+        character.position.x -= 100 * window.engine.delta;
+        if (character.position.x < borderDist) {
+          return character.position.x = borderDist;
+        }
       } else {
         return character.direction('front');
       }

@@ -235,18 +235,34 @@ $(document).ready ->
       @direction 'front'
       @jumping = false
       @center = new Vector 64, 102
+      @gravity = 0
+      @grounded = yes
+      @maxgravity = 200
     jump: (jumping) ->
+      if jumping 
+        return unless @grounded
+        if not @jumping
+          @gravity += @maxgravity
+      @gravity = @maxgravity if @gravity > @maxgravity
       @jumping = jumping
+      if @jumping
+        @grounded = no
     direction: (dir) ->
       @dir = dir
       @flipH = @dir is 'left'
       @frame = @frames[@dir][0]
     updateCallback: (delta) ->
-      if @jumping
-        @position.y -= 100 * delta
+      if @gravity <= 0
+        if @tiles.ground @position
+          @grounded = yes
+          @gravity = 0
+        else
+          @grounded = no
+      if !@grounded
+        @position.y -= @gravity * delta
+        @gravity -= 100 * delta
         @frame = @jumpFrames[@dir][0]
       else
-        # @position.y += 10 * delta
         @frame = @frames[@dir][0]
 
   class TilesLayer extends Layer
@@ -263,6 +279,7 @@ $(document).ready ->
       for tile in tiles
         if tile >= 0
           sprite = @sprite()
+          sprite.tile = tile
           sprite.frame = tile
           sprite.scale = 1
           sprite.position = new Vector offset.x + (x+1) * @tileSize, offset.y + (y+1) * @tileSize
@@ -277,6 +294,14 @@ $(document).ready ->
     sprite: () ->
       sprite = new Sprite "tiles.png", sprites: [8,4]
       sprite
+    ground: (position) ->
+      local = position.div @tileSize
+      tile = new Vector Math.floor(local.x) - 1, Math.floor(local.y) - 1
+      if row = @rows[tile.y]
+        if cell = row[tile.x]
+          if cell.tile >= 0
+            return yes
+      no
 
 
   window.engine = new Engine
@@ -296,6 +321,7 @@ $(document).ready ->
   window.engine.addLayer uiLayer
 
   character = new Character
+  character.tiles = tilesLayer
   gameLayer.add character
 
   fps = new Text ""
@@ -320,11 +346,14 @@ $(document).ready ->
   tilesLayer.addTileRow [-1,  0, -1,  0,  0,  0,  0,  0,  0, -1, -1, -1, -1, -1, -1, -1, -1, -1,  8]
   tilesLayer.addTileRow  [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0]
 
-  character.position = new Vector 320, 480
+  character.position = new Vector 320, 480 - 64
+  borderDist = 10
 
   window.engine.registerKeyEvent 'D', (down) ->
     if down
       character.position.x += 100 * window.engine.delta
+      if character.position.x > 640 - borderDist
+        character.position.x = 640 - borderDist
       character.direction 'right'
     else
       character.direction 'front'
@@ -332,6 +361,8 @@ $(document).ready ->
     if down
       character.direction 'left'
       character.position.x -= 100 * window.engine.delta
+      if character.position.x < borderDist
+        character.position.x = borderDist
     else
       character.direction 'front'
   window.engine.registerKeyEvent 'W', (down) ->
