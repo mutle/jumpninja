@@ -4,7 +4,7 @@
   window.engine = null;
 
   $(document).ready(function() {
-    var Character, Engine, Rect, Renderable, Sprite, Text, Vector, character, fps, update, updateRate;
+    var Character, Engine, Layer, Rect, Renderable, Sprite, Text, TilesLayer, Vector, backgroundLayer, character, fps, gameLayer, tilesLayer, uiLayer, update, updateRate;
     Engine = (function() {
 
       function Engine() {
@@ -16,11 +16,11 @@
         this.ctx.fillStyle = this.clearColor;
         this.ctx.fillRect(0, 0, this.w, this.h);
         this.running = true;
-        this.objects = [];
         this.lastMillis = this.milliseconds();
         this.resolution = 1;
         this.keyEvents = {};
         this.delta = 0;
+        this.layers = [];
         window.document.addEventListener('keydown', function(event) {
           var char;
           char = String.fromCharCode(event.keyCode);
@@ -54,6 +54,12 @@
         if (event.state === 'up') return event.state = 'idle';
       };
 
+      Engine.prototype.keyDown = function(key) {
+        var event;
+        event = this.keyEvents[key];
+        return event && event.state === 'down';
+      };
+
       Engine.prototype.scale = function(factor) {
         this.resolution = factor;
         this.screen.width = this.origw * factor;
@@ -62,12 +68,12 @@
         return this.ctx.scale(factor, factor);
       };
 
-      Engine.prototype.add = function(object) {
-        return this.objects.push(object);
+      Engine.prototype.addLayer = function(layer) {
+        return this.layers.push(layer);
       };
 
       Engine.prototype.update = function() {
-        var event, key, o, sortedObjects, _i, _j, _len, _len2, _ref;
+        var event, key, layer, _i, _j, _len, _len2, _ref, _ref2, _ref3;
         if (!this.running) return;
         _ref = this.keyEvents;
         for (key in _ref) {
@@ -77,18 +83,17 @@
         }
         this.currentMillis = this.milliseconds();
         this.delta = (this.currentMillis - this.lastMillis) / 1000;
-        sortedObjects = _.sortBy(this.objects, function(o) {
-          return o.position.z;
-        });
-        for (_i = 0, _len = sortedObjects.length; _i < _len; _i++) {
-          o = sortedObjects[_i];
-          o.update(this.delta);
+        _ref2 = this.layers;
+        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+          layer = _ref2[_i];
+          layer.update(this.delta);
         }
         this.ctx.fillStyle = this.clearColor;
         this.ctx.fillRect(0, 0, this.w, this.h);
-        for (_j = 0, _len2 = sortedObjects.length; _j < _len2; _j++) {
-          o = sortedObjects[_j];
-          o.draw(this);
+        _ref3 = this.layers;
+        for (_j = 0, _len2 = _ref3.length; _j < _len2; _j++) {
+          layer = _ref3[_j];
+          layer.draw(this);
         }
         this.lastMillis = this.currentMillis;
         return this.delta;
@@ -99,15 +104,20 @@
         return this.lastMillis = this.milliseconds();
       };
 
+      Engine.prototype.fullscreen = function() {
+        if (document.webkitIsFullScreen) {
+          return $('#game').get(0).webkitCancelFullScreen();
+        } else {
+          return $('#game').get(0).webkitRequestFullScreen();
+        }
+      };
+
       Engine.prototype.translate = function(offset, rotate, flipH, flipV, callback) {
         var angle;
         angle = rotate * Math.PI / 180;
         this.ctx.translate(offset.x, offset.y);
         this.ctx.rotate(angle);
-        if (flipH) {
-          window.console.log("flipping");
-          this.ctx.scale(-1, 1);
-        }
+        if (flipH) this.ctx.scale(-1, 1);
         callback.apply(this);
         if (flipH) this.ctx.scale(-1, 1);
         this.ctx.rotate(-angle);
@@ -166,6 +176,22 @@
         if (!this.z) this.z = 0;
       }
 
+      Vector.prototype.add = function(v) {
+        return new Vector(this.x + v.x, this.y + v.y, this.z + v.z);
+      };
+
+      Vector.prototype.sub = function(v) {
+        return new Vector(this.x - v.x, this.y - v.y, this.z - v.z);
+      };
+
+      Vector.prototype.mult = function(a) {
+        return new Vector(this.x * a, this.y * a, this.z * a);
+      };
+
+      Vector.prototype.div = function(a) {
+        return new Vector(this.x / a, this.y / a, this.z / a);
+      };
+
       return Vector;
 
     })();
@@ -178,6 +204,49 @@
       }
 
       return Renderable;
+
+    })();
+    Layer = (function() {
+
+      __extends(Layer, Renderable);
+
+      function Layer() {
+        Layer.__super__.constructor.call(this);
+        this.objects = [];
+      }
+
+      Layer.prototype.update = function(delta) {
+        var o, _i, _len, _ref, _results;
+        this.sortedObjects = _.sortBy(this.objects, function(o) {
+          return o.position.z;
+        });
+        _ref = this.sortedObjects;
+        _results = [];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          o = _ref[_i];
+          _results.push(o.update(delta));
+        }
+        return _results;
+      };
+
+      Layer.prototype.draw = function(engine) {
+        var o, _i, _len, _ref, _results;
+        _ref = this.sortedObjects;
+        _results = [];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          o = _ref[_i];
+          _results.push(engine.translate(this.position, this.rotate, false, false, function() {
+            return o.draw(engine);
+          }));
+        }
+        return _results;
+      };
+
+      Layer.prototype.add = function(object) {
+        return this.objects.push(object);
+      };
+
+      return Layer;
 
     })();
     Text = (function() {
@@ -243,7 +312,7 @@
         if (attrs) {
           this.sprites = new Vector(attrs.sprites[0], attrs.sprites[1]);
         } else {
-          this.sprites = [1, 1];
+          this.sprites = new Vector(1, 1);
         }
         this.frame = 0;
         this.setFPS(1);
@@ -262,19 +331,24 @@
       Sprite.prototype.setSize = function(w, h) {
         this.w = w / this.sprites.x;
         this.h = h / this.sprites.y;
-        this.center.x = this.w / 2 * this.scale;
-        this.center.y = this.h / 2 * this.scale;
+        if (!(this.center != null)) {
+          this.center.x = this.w / 2 * this.scale;
+          this.center.y = this.h / 2 * this.scale;
+        }
         return this.updatePos();
       };
 
       Sprite.prototype.update = function(delta) {
-        if (this.updateCallback) this.updateCallback(delta);
+        if (this.updateCallback != null) this.updateCallback(delta);
         this.nextFrame(delta);
         return this.updatePos();
       };
 
       Sprite.prototype.updatePos = function() {
-        this.src = new Rect(this.frame * this.w, 0, this.w, this.h);
+        var frameX, frameY;
+        frameX = this.frame % this.sprites.x;
+        frameY = Math.floor(this.frame / this.sprites.x);
+        this.src = new Rect(frameX * this.w, frameY * this.h, this.w, this.h);
         return this.dst = new Rect(this.position.x, this.position.y, this.w * this.scale, this.h * this.scale);
       };
 
@@ -302,15 +376,26 @@
 
       function Character() {
         Character.__super__.constructor.call(this, "character.png", {
-          sprites: [8, 1]
+          sprites: [8, 2]
         });
         this.frames = {
           'front': [0],
           'left': [1],
           'right': [1]
         };
+        this.jumpFrames = {
+          'front': [8],
+          'left': [9],
+          'right': [9]
+        };
         this.direction('front');
+        this.jumping = false;
+        this.center = new Vector(64, 102);
       }
+
+      Character.prototype.jump = function(jumping) {
+        return this.jumping = jumping;
+      };
 
       Character.prototype.direction = function(dir) {
         this.dir = dir;
@@ -318,7 +403,63 @@
         return this.frame = this.frames[this.dir][0];
       };
 
+      Character.prototype.updateCallback = function(delta) {
+        if (this.jumping) {
+          this.position.y -= 100 * delta;
+          return this.frame = this.jumpFrames[this.dir][0];
+        } else {
+          return this.frame = this.frames[this.dir][0];
+        }
+      };
+
       return Character;
+
+    })();
+    TilesLayer = (function() {
+
+      __extends(TilesLayer, Layer);
+
+      function TilesLayer() {
+        TilesLayer.__super__.constructor.call(this);
+        this.tileSize = 32;
+        this.rows = {};
+        this.offset = new Vector(0, 13);
+      }
+
+      TilesLayer.prototype.addTileRow = function(tiles) {
+        var offset, row, sprite, tile, x, y, _i, _len;
+        y = 0;
+        x = 0;
+        offset = this.offset.mult(this.tileSize);
+        row = [];
+        for (_i = 0, _len = tiles.length; _i < _len; _i++) {
+          tile = tiles[_i];
+          if (tile >= 0) {
+            sprite = this.sprite();
+            sprite.frame = tile;
+            sprite.scale = 1;
+            sprite.position = new Vector(offset.x + (x + 1) * this.tileSize, offset.y + (y + 1) * this.tileSize);
+            sprite.center = new Vector(0, 0);
+            this.add(sprite);
+            row.push(sprite);
+          } else {
+            row.push(null);
+          }
+          x++;
+        }
+        this.rows[this.offset.y] = row;
+        return this.offset.y--;
+      };
+
+      TilesLayer.prototype.sprite = function() {
+        var sprite;
+        sprite = new Sprite("tiles.png", {
+          sprites: [8, 4]
+        });
+        return sprite;
+      };
+
+      return TilesLayer;
 
     })();
     window.engine = new Engine;
@@ -329,9 +470,16 @@
       return window.setTimeout(update, updateRate - (delta * 1000));
     };
     window.setTimeout(update, 1);
+    backgroundLayer = new Layer;
+    window.engine.addLayer(backgroundLayer);
+    tilesLayer = new TilesLayer;
+    window.engine.addLayer(tilesLayer);
+    gameLayer = new Layer;
+    window.engine.addLayer(gameLayer);
+    uiLayer = new Layer;
+    window.engine.addLayer(uiLayer);
     character = new Character;
-    character.position = new Vector(100, 100, 10);
-    character.updateCallback = function(delta) {};
+    gameLayer.add(character);
     fps = new Text("");
     fps.frames = 0;
     fps.elapsed = 0;
@@ -348,6 +496,11 @@
       }
     };
     fps.position = new Vector(0, 0, 100);
+    uiLayer.add(fps);
+    tilesLayer.addTileRow([0, 8, 8, 8, 8, 8, 8, 8, 8, 0, -1, -1, -1, -1, -1, -1, 0, 0, 8]);
+    tilesLayer.addTileRow([-1, 0, -1, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, 8]);
+    tilesLayer.addTileRow([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0]);
+    character.position = new Vector(320, 480);
     window.engine.registerKeyEvent('D', function(down) {
       if (down) {
         character.position.x += 100 * window.engine.delta;
@@ -364,8 +517,16 @@
         return character.direction('front');
       }
     });
-    window.engine.add(character);
-    window.engine.add(fps);
+    window.engine.registerKeyEvent('W', function(down) {
+      if (down) {
+        return character.jump(true);
+      } else {
+        return character.jump(false);
+      }
+    });
+    $("#fullscreen").click(function() {
+      return window.engine.fullscreen();
+    });
     $("#resolution").click(function() {
       if (window.engine.resolution > 1) {
         $(this).html("Double Size");
