@@ -4,7 +4,7 @@
   window.engine = null;
 
   $(document).ready(function() {
-    var Engine, Rect, Renderable, Sprite, Text, Vector, fps, sprite, sprite2, update, updateRate;
+    var Engine, Rect, Renderable, Sprite, Text, Vector, character, fps, update, updateRate;
     Engine = (function() {
 
       function Engine() {
@@ -235,11 +235,12 @@
         } else {
           this.sprites = [1, 1];
         }
-        this.frame = 0;
+        this.frame = 1;
         this.setFPS(1);
         this.frameTime = 0;
         this.totalFrames = this.sprites.x * this.sprites.y;
         this.rotate = 0;
+        this.animating = false;
       }
 
       Sprite.prototype.setFPS = function(fps) {
@@ -271,6 +272,7 @@
       };
 
       Sprite.prototype.nextFrame = function(delta) {
+        if (!this.animating) return;
         this.frameTime += delta;
         if (this.frameTime > this.frameRate) {
           this.frameTime -= this.frameRate;
@@ -290,21 +292,11 @@
       return window.setTimeout(update, updateRate - (delta * 1000));
     };
     window.setTimeout(update, 1);
-    sprite = new Sprite("anim.png", {
-      sprites: [3, 1]
+    character = new Sprite("character.png", {
+      sprites: [8, 1]
     });
-    sprite.position = new Vector(100, 100, 10);
-    sprite.updateCallback = function(delta) {
-      return this.rotate += 5;
-    };
-    sprite2 = new Sprite("anim.png", {
-      sprites: [3, 1]
-    });
-    sprite2.position = new Vector(200, 100, 8);
-    sprite2.setFPS(0.5);
-    sprite2.updateCallback = function(delta) {
-      return this.rotate += 1;
-    };
+    character.position = new Vector(100, 100, 10);
+    character.updateCallback = function(delta) {};
     fps = new Text("");
     fps.frames = 0;
     fps.elapsed = 0;
@@ -325,8 +317,7 @@
       window.console.log('d');
       if (down) return sprite.position.x += 10;
     });
-    window.engine.add(sprite);
-    window.engine.add(sprite2);
+    window.engine.add(character);
     window.engine.add(fps);
     $("#resolution").click(function() {
       if (window.engine.resolution > 1) {

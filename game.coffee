@@ -150,11 +150,12 @@ $(document).ready ->
         @sprites = new Vector attrs.sprites[0], attrs.sprites[1]
       else
         @sprites = [1,1]
-      @frame = 0
+      @frame = 1
       @setFPS 1
       @frameTime = 0
       @totalFrames = @sprites.x * @sprites.y
       @rotate = 0
+      @animating = false
 
     setFPS: (fps) ->
       @frameRate = 1/fps;
@@ -180,6 +181,7 @@ $(document).ready ->
       engine.drawImage @image, @src, @dst, @rotate, @center
 
     nextFrame: (delta) ->
+      return if not @animating
       @frameTime += delta
       if @frameTime > @frameRate
         @frameTime -= @frameRate
@@ -193,16 +195,9 @@ $(document).ready ->
     window.setTimeout update, updateRate - (delta * 1000)
   window.setTimeout update, 1
 
-  sprite = new Sprite "anim.png", sprites:[3,1]
-  sprite.position = new Vector 100, 100, 10
-  sprite.updateCallback = (delta) ->
-    @rotate += 5
-
-  sprite2 = new Sprite "anim.png", sprites:[3,1]
-  sprite2.position = new Vector 200, 100, 8
-  sprite2.setFPS 0.5
-  sprite2.updateCallback = (delta) ->
-    @rotate += 1
+  character = new Sprite "character.png", sprites:[8,1]
+  character.position = new Vector 100, 100, 10
+  character.updateCallback = (delta) ->
 
   fps = new Text ""
   fps.frames = 0;
@@ -226,8 +221,7 @@ $(document).ready ->
       sprite.position.x += 10
 
 
-  window.engine.add sprite
-  window.engine.add sprite2
+  window.engine.add character
   window.engine.add fps
 
   $("#resolution").click ->
