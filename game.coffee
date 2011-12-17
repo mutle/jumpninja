@@ -15,7 +15,7 @@ $(document).ready ->
       @resolution = 1
       @keyEvents = {}
       @delta = 0
-      @layers = []
+      @scene = null
       window.document.addEventListener 'keydown', (event) ->
         char = String.fromCharCode event.keyCode
         window.engine.updateEvent char, 'down'
@@ -24,10 +24,21 @@ $(document).ready ->
         char = String.fromCharCode event.keyCode
         window.engine.updateEvent char, 'up'
         false
+    reset: ->
+      @clearColor = '#000'
+      @ctx.fillStyle = @clearColor
+      @ctx.fillRect 0, 0, @w, @h
+      @running = true
+      @lastMillis = @milliseconds()
+      @keyEvents = {}
+      @delta = 0
+      @scene = null
     registerKeyEvent: (key, callback) ->
       @keyEvents[key] = {callback: callback, key: key, state: 'idle'}
     updateEvent: (key, state) ->
       event = @keyEvents[key]
+      event.state = state if event
+      event = @keyEvents['']
       event.state = state if event
     handleEvent: (event) ->
       if event.callback
@@ -43,8 +54,9 @@ $(document).ready ->
       @screen.height = @origh * factor
       @ctx = @screen.getContext "2d"
       @ctx.scale factor, factor
-    addLayer: (layer) ->
-      @layers.push layer
+    setScene: (scene) ->
+      @reset() if @scene
+      @scene = scene
     update: ->
       return unless @running
 
@@ -54,12 +66,12 @@ $(document).ready ->
 
       @currentMillis = @milliseconds()
       @delta = (@currentMillis - @lastMillis) / 1000
-      @updateCallback @delta if @updateCallback
-      layer.update @delta for layer in @layers
       @ctx.fillStyle = @clearColor
+
+      @scene.update @delta if @scene
       @ctx.fillRect 0, 0, @w, @h
-      layer.draw this for layer in @layers
-        # @delta = (@milliseconds() - @lastMillis) / 1000
+      @scene.draw this if @scene
+
       @lastMillis = @currentMillis
       @delta
     pause: ->
@@ -127,14 +139,35 @@ $(document).ready ->
       @rotate = 0
       @center = new Vector 0, 0
 
+  class Scene extends Renderable
+    constructor: (callback) ->
+      super()
+      @layers = []
+      @gameisover = no
+      @engine = window.engine
+      @engine.setScene this
+      callback.apply this
+    addLayer: (layer) ->
+      @layers.push layer
+    update: (delta) ->
+      @updateCallback delta if @updateCallback
+      layer.update delta for layer in @layers
+    draw: (engine) ->
+      layer.draw engine for layer in @layers
+    registerKeyEvent: (key, callback) ->
+      @engine.registerKeyEvent key, callback.bind this
+
   class Layer extends Renderable
     constructor: ->
       super()
       @objects = []
-    update: (delta) ->
+    sort: ->
       @sortedObjects = _.sortBy @objects, (o) -> o.position.z
+    update: (delta) ->
+      @sort()
       o.update delta for o in @sortedObjects
     draw: (engine) ->
+      @sort() unless @sortedObjects
       for o in @sortedObjects
         engine.translate @position, @rotate, false, false, ->
           o.draw engine 
@@ -261,6 +294,7 @@ $(document).ready ->
       if @gravity <= 0
         if @tiles.ground @position
           @grounded = yes
+          @direction 'front'
           @gravity = 0
         else
           @grounded = no
@@ -288,7 +322,7 @@ $(document).ready ->
           sprite.tile = tile
           sprite.frame = tile
           sprite.scale = 1
-          sprite.position = new Vector offset.x + (x+1) * @tileSize, offset.y + (y+1) * @tileSize
+          sprite.position = new Vector offset.x + x * @tileSize, offset.y + (y+1) * @tileSize
           sprite.center = new Vector 0, 0
           @add sprite
           row.push sprite
@@ -302,7 +336,7 @@ $(document).ready ->
       sprite
     ground: (position) ->
       local = position.div @tileSize
-      tile = new Vector Math.floor(local.x) - 1, Math.floor(local.y) - 1
+      tile = new Vector Math.floor(local.x), Math.floor(local.y) - 1
       if row = @rows[tile.y]
         if cell = row[tile.x]
           if cell.tile >= 0
@@ -311,101 +345,108 @@ $(document).ready ->
 
 
   window.engine = new Engine
+  window.engine.gameisover = no
   updateRate = 1000/60
   update = ->
     delta = window.engine.update()
     window.setTimeout update, updateRate - (delta * 1000)
   window.setTimeout update, 1
 
-  backgroundLayer = new Layer
-  window.engine.addLayer backgroundLayer
-  tilesLayer = new TilesLayer
-  window.engine.addLayer tilesLayer
-  gameLayer = new Layer
-  window.engine.addLayer gameLayer
-  uiLayer = new Layer
-  window.engine.addLayer uiLayer
+  mainScene = ->
+    new Scene ->
+      @backgroundLayer = new Layer
+      @addLayer @backgroundLayer
+      @tilesLayer = new TilesLayer
+      @addLayer @tilesLayer
+      @gameLayer = new Layer
+      @addLayer @gameLayer
+      @uiLayer = new Layer
+      @addLayer @uiLayer
 
-  engine.gameisover = no
-  engine.updateCallback = (delta) ->
-    if character.position.y > 540
-      engine.gameover()
-  engine.gameover = () ->
-    return if engine.gameisover
-    engine.gameisover = yes
-    text = new Text "GAME OVER!"
-    text.setFont 100
-    text.setAlign 'center', 'center'
-    text.position = new Vector 320, 240
-    uiLayer.add text
+      @updateCallback = (delta) ->
+        if @character.position.y > 540
+          @gameover()
+      @gameover = ->
+        return if @gameisover
+        @gameisover = yes
 
-    text.colors = ['#fff', '#f00', '#0f0', '#00f']
-    text.colorIndex = 0
+        text = new Text "GAME OVER!"
+        text.setFont 100
+        text.setAlign 'center', 'center'
+        text.position = new Vector 320, 240
+        @uiLayer.add text
 
-    text.updateCallback = (delta) ->
-      @colorIndex += delta
-      index = Math.floor(@colorIndex) % @colors.length
-      @color = @colors[index]
+        text.colors = ['#fff', '#f00', '#0f0', '#00f']
+        text.colorIndex = 0
 
-    text = new Text "Press any key to retry."
-    text.setFont 40
-    text.setAlign 'center', 'center'
-    text.position = new Vector 320, 340
-    uiLayer.add text
-      
+        text.updateCallback = (delta) ->
+          @colorIndex += delta
+          index = Math.floor(@colorIndex) % @colors.length
+          @color = @colors[index]
 
-  character = new Character
-  character.tiles = tilesLayer
-  gameLayer.add character
+        text = new Text "Press any key to retry."
+        text.setFont 40
+        text.setAlign 'center', 'center'
+        text.position = new Vector 320, 340
+        @uiLayer.add text
+        @registerKeyEvent '', (down) ->
+          if !down
+            mainScene()
+        
 
-  fps = new Text ""
-  fps.frames = 0;
-  fps.elapsed = 0;
-  fps.setAlign 'left', 'top'
-  fps.updateCallback = (delta) ->
-    fps.elapsed += delta
-    @frames++
+      @character = new Character
+      @character.tiles = @tilesLayer
+      @character.position = new Vector 340, 480 - 32
+      @gameLayer.add @character
 
-    if fps.elapsed > 1
-      rate = @frames / fps.elapsed
-      fps.elapsed -= 1
-      @frames = 0
-      @text = rate.toFixed(0)+" FPS"
+      fps = new Text ""
+      fps.frames = 0;
+      fps.elapsed = 0;
+      fps.setAlign 'left', 'top'
+      fps.updateCallback = (delta) ->
+        fps.elapsed += delta
+        @frames++
 
-  fps.position = new Vector 0, 0, 100
-  uiLayer.add fps
+        if fps.elapsed > 1
+          rate = @frames / fps.elapsed
+          fps.elapsed -= 1
+          @frames = 0
+          @text = rate.toFixed(0)+" FPS"
 
-  # 19 x 14 
-  tilesLayer.addTileRow [ 0,  8,  8,  8,  8,  8,  8,  8,  8,  0, -1, -1, -1, -1, -1, -1,  0,  0,  8]
-  tilesLayer.addTileRow [-1,  0, -1,  0,  0,  0,  0,  0,  0, -1, -1, -1, -1, -1, -1, -1, -1, -1,  8]
-  tilesLayer.addTileRow  [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0]
+      fps.position = new Vector 0, 0, 100
+      @uiLayer.add fps
 
-  character.position = new Vector 320, 480 - 64
-  borderDist = 10
+      @startRow = [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0] 
+      @blankRow = []
 
-  window.engine.registerKeyEvent 'D', (down) ->
-    if down
-      character.position.x += 100 * window.engine.delta
-      if character.position.x > 640 - borderDist
-        character.position.x = 640 - borderDist
-      character.direction 'right'
-    else
-      character.direction 'front'
-  window.engine.registerKeyEvent 'A', (down) ->
-    if down
-      character.direction 'left'
-      character.position.x -= 100 * window.engine.delta
-      if character.position.x < borderDist
-        character.position.x = borderDist
-    else
-      character.direction 'front'
-  window.engine.registerKeyEvent 'W', (down) ->
-    if down
-      character.jump true
-    else
-      character.jump false
+      # 20 x 15
+      @tilesLayer.addTileRow @startRow
+      @tilesLayer.addTileRow @blankRow
+      for i in [1..13]
+        @tilesLayer.addTileRow @startRow 
+        @tilesLayer.addTileRow @blankRow 
 
+      borderDist = 10
+      @movespeed = 200
+      @registerKeyEvent 'D', (down) ->
+        if down
+          @character.position.x += @movespeed * @engine.delta
+          if @character.position.x > 640 - borderDist
+            @character.position.x = 640 - borderDist
+          @character.direction 'right'
+      @registerKeyEvent 'A', (down) ->
+        if down
+          @character.direction 'left'
+          @character.position.x -= @movespeed * @engine.delta
+          if @character.position.x < borderDist
+            @character.position.x = borderDist
+      @registerKeyEvent 'W', (down) ->
+        if down
+          @character.jump true
+        else
+          @character.jump false
 
+  mainScene()
 
   $("#fullscreen").click ->
     window.engine.fullscreen()
