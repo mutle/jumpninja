@@ -177,6 +177,8 @@ $(document).ready ->
           o.draw engine 
     add: (object) ->
       @objects.push object
+    remove: (object) ->
+      @objects = _.without @objects, object
 
   class Text extends Renderable
     constructor: (@text) ->
@@ -239,6 +241,8 @@ $(document).ready ->
       @animating = false
       @flipH = false
       @flipV = false
+      @startFrame = 0
+      @endFrame = 0
 
     setFPS: (fps) ->
       @frameRate = 1/fps;
@@ -272,7 +276,7 @@ $(document).ready ->
       if @frameTime > @frameRate
         @frameTime -= @frameRate
         @frame++
-        @frame = 0 if @frame >= @totalFrames
+        @frame = @startFrame if @frame >= @endFrame
 
   class Character extends Sprite
     constructor: () ->
@@ -320,11 +324,11 @@ $(document).ready ->
     constructor: ->
       super()
       @tileSize = 32
-      @rows = {}
+      @rows = []
       @offset = new Vector 0, 0
       @initialOffset = 13
+      @firstRow = 0
     addTileRow: (tiles) ->
-      y=0
       x = 0
       offset = @offset.mult @tileSize
       row = []
@@ -334,7 +338,7 @@ $(document).ready ->
           sprite.tile = tile
           sprite.frame = tile
           sprite.scale = 1
-          sprite.position = new Vector offset.x + x * @tileSize, 480 - @tileSize - (offset.y + y * @tileSize)
+          sprite.position = new Vector offset.x + x * @tileSize, 480 - @tileSize - offset.y
           sprite.center = new Vector 0, 0
           @add sprite
           row.push sprite
@@ -343,6 +347,13 @@ $(document).ready ->
         x++
       @rows[@offset.y] = row
       @offset.y++
+    removeLastRow: () ->
+      row = _.first @rows
+      if row
+        for o in row
+          @remove o
+        delete row
+        @rows = _.compact @rows
     sprite: () ->
       sprite = new Sprite "tiles.png", sprites: [8,4]
       sprite
@@ -400,6 +411,7 @@ $(document).ready ->
         row = tile.y
         if row > @tilesLayer.lastRow()
           @tilesLayer.addTileRow @generateRow @tilesLayer.lastRow()
+          @tilesLayer.removeLastRow()
 
         # Scroll up
         if h < 150
@@ -437,16 +449,19 @@ $(document).ready ->
         text.setFont 40
         text.setAlign 'center', 'center'
         text.position = new Vector 320, 340
-        text.colors = ['#fff', '']
+        text.colors = ['', '#fff']
         text.colorIndex = 0
+        text.eventRegistered = no
         text.updateCallback = (delta) ->
-          @colorIndex += delta
+          @colorIndex += delta / 2
           index = Math.floor(@colorIndex) % @colors.length
           @color = @colors[index]
+          if index > 0 and not @eventRegistered
+            @eventRegistered = yes
+            scene.registerKeyEvent '', (down) ->
+              if !down
+                mainScene()
         @uiLayer.add text
-        @registerKeyEvent '', (down) ->
-          if !down
-            mainScene()
         
 
       @character = new Character
@@ -454,10 +469,14 @@ $(document).ready ->
       @character.position = new Vector 340, 480 - 64
       @gameLayer.add @character
 
-      for i in [0..18]
+      for i in [0..9]
         sprite = @tilesLayer.sprite()
-        sprite.frame = 24
-        sprite.position = new Vector i * @tilesLayer.tileSize, 480 - 64 
+        sprite.frame = 24 + Math.floor(Math.random() * 8)
+        sprite.startFrame = 24
+        sprite.endFrame = 31
+        sprite.position = new Vector i * @tilesLayer.tileSize * 2, 480 - 64 
+        sprite.animating = yes
+        sprite.setFPS 10
         @foregroundLayer.add sprite
 
       score = new Text "Score: 0"
@@ -495,7 +514,7 @@ $(document).ready ->
 
       @generateRow = (n) ->
         return (8 for i in [1..20]) if n == 0
-        return (0 for i in [1..20]) if n == 1
+        return (1 for i in [1..20]) if n == 1
         return [] if n < 3
         row = (-1 for i in [1..20])
         if @hasPlatform n
@@ -504,7 +523,10 @@ $(document).ready ->
           pend = pstart + ps
           pend = 19 if pend >= 20
           for i in [pstart..pend]
-            row[i] = 0
+            t = 1
+            t = 0 if i == pstart
+            t = 2 if i == pend
+            row[i] = t
         return row
 
       n = 0
