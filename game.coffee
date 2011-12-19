@@ -289,7 +289,7 @@ $(document).ready ->
       @gravity = 0
       @grounded = yes
       @maxgravity = 600
-      @gravitydecay = 600
+      @gravitydecay = 900
     jump: (jumping) ->
       if jumping 
         return unless @grounded
@@ -399,10 +399,12 @@ $(document).ready ->
       @scrollspeed = 20
 
       @setScore = (score) ->
+        return if @gameisover
+        return if @score > score
         oldscore = Math.floor(@score / 1000)
         @score = score
         if Math.floor(@score / 1000) > oldscore
-          @scrollspeed += 5
+          @scrollspeed += 2
 
       @updateCallback = (delta) ->
         @position.y += @scrollspeed * delta
@@ -539,22 +541,30 @@ $(document).ready ->
       borderDist = 10
       @movespeed = 200
       @registerKeyEvent 'D', (down) ->
+        return if @gameisover
         if down
           @character.position.x += @movespeed * @engine.delta
           if @character.position.x > 640 - borderDist
             @character.position.x = 640 - borderDist
           @character.direction 'right'
       @registerKeyEvent 'A', (down) ->
+        return if @gameisover
         if down
           @character.direction 'left'
           @character.position.x -= @movespeed * @engine.delta
           if @character.position.x < borderDist
             @character.position.x = borderDist
       @registerKeyEvent 'W', (down) ->
+        return if @gameisover
         if down
           @character.jump true
         else
           @character.jump false
+
+      @registerKeyEvent 'P', (down) ->
+        window.engine.pause()
+        $("#pause").html "Resume"
+
 
   mainScene()
 

@@ -472,7 +472,7 @@
         this.gravity = 0;
         this.grounded = true;
         this.maxgravity = 600;
-        this.gravitydecay = 600;
+        this.gravitydecay = 900;
       }
 
       Character.prototype.jump = function(jumping) {
@@ -627,10 +627,12 @@
         this.scrollspeed = 20;
         this.setScore = function(score) {
           var oldscore;
+          if (this.gameisover) return;
+          if (this.score > score) return;
           oldscore = Math.floor(this.score / 1000);
           this.score = score;
           if (Math.floor(this.score / 1000) > oldscore) {
-            return this.scrollspeed += 5;
+            return this.scrollspeed += 2;
           }
         };
         this.updateCallback = function(delta) {
@@ -791,6 +793,7 @@
         borderDist = 10;
         this.movespeed = 200;
         this.registerKeyEvent('D', function(down) {
+          if (this.gameisover) return;
           if (down) {
             this.character.position.x += this.movespeed * this.engine.delta;
             if (this.character.position.x > 640 - borderDist) {
@@ -800,6 +803,7 @@
           }
         });
         this.registerKeyEvent('A', function(down) {
+          if (this.gameisover) return;
           if (down) {
             this.character.direction('left');
             this.character.position.x -= this.movespeed * this.engine.delta;
@@ -808,12 +812,17 @@
             }
           }
         });
-        return this.registerKeyEvent('W', function(down) {
+        this.registerKeyEvent('W', function(down) {
+          if (this.gameisover) return;
           if (down) {
             return this.character.jump(true);
           } else {
             return this.character.jump(false);
           }
+        });
+        return this.registerKeyEvent('P', function(down) {
+          window.engine.pause();
+          return $("#pause").html("Resume");
         });
       });
     };
